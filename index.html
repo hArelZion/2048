@@ -280,6 +280,18 @@ header::before {
   font-weight:700; letter-spacing:0.12em; font-size:10px;
 }
 .btn.danger { border-color:rgba(255,50,50,0.3); color:rgba(255,80,80,0.7); font-size:8px; }
+
+/* Stopwatch */
+.timer {
+  margin-right: auto;
+  display: flex; flex-direction: column; justify-content: center; gap: 2px;
+  font-family: 'DM Mono', monospace; font-size: 14px; letter-spacing: 0.1em;
+  color: var(--gold-bright); font-variant-numeric: tabular-nums;
+}
+.timer::before { content:'TIME'; font-size:7px; letter-spacing:0.45em; color:var(--muted); }
+.timer.paused { opacity: 0.55; }
+[data-theme="classic"] .timer { color:#776e65; font-weight:700; font-family:var(--font-ui); }
+[data-theme="classic"] .timer::before { font-weight:700; letter-spacing:0.2em; }
 [data-theme="classic"] .btn.danger { background:#f65e3b; color:#fff; }
 
 /* ── BOARD AREA ── */
@@ -724,6 +736,39 @@ header::before {
 [data-theme="classic"] .pgcell.filled { background:#eee4da; color:#776e65; font-weight:700; }
 .place-status { font-size:8px; letter-spacing:0.2em; color:var(--muted); margin-top:0.5rem; min-height:1.2em; }
 
+/* Games board */
+.g-summary { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-bottom:1rem; }
+.g-stat { border:1px solid var(--panel-border); padding:8px 4px; text-align:center; }
+.g-stat b { display:block; font-family:var(--font-display); font-size:1.15rem; color:var(--gold-bright); font-weight:600; }
+.g-stat span { font-size:6px; letter-spacing:0.3em; color:var(--muted); }
+[data-theme="classic"] .g-stat { background:#bbada0; border:none; border-radius:3px; }
+[data-theme="classic"] .g-stat b { color:#fff; font-weight:700; }
+[data-theme="classic"] .g-stat span { color:#eee4da; font-weight:700; letter-spacing:0.15em; }
+.g-tabs { display:flex; gap:5px; margin-bottom:0.7rem; }
+.g-list { display:flex; flex-direction:column; gap:6px; }
+.g-row {
+  display:flex; align-items:center; gap:10px; padding:8px 10px;
+  border:1px solid rgba(201,168,76,0.1); background:rgba(255,255,255,0.015);
+}
+[data-theme="classic"] .g-row { background:#eee4da; border:none; border-radius:3px; }
+.g-rank { width:1.4rem; font-size:9px; color:var(--muted); text-align:right; flex-shrink:0; }
+.mini-tile {
+  width:42px; height:32px; flex-shrink:0; border-radius:4px;
+  display:flex; align-items:center; justify-content:center;
+  font-family:var(--font-display); font-weight:700; font-size:12px;
+}
+[data-theme="classic"] .mini-tile { border:none; box-shadow:none; border-radius:3px; }
+[data-theme="classic"] .mini-tile:not(.t2):not(.t4) { color:#f9f6f2; }
+.g-main { flex:1; min-width:0; }
+.g-score { font-family:var(--font-display); font-size:1.05rem; font-weight:600; color:var(--platinum); line-height:1.1; }
+.g-score small { font-family:var(--font-ui); font-size:7px; letter-spacing:0.25em; color:var(--muted); }
+.g-meta { font-size:7px; letter-spacing:0.12em; color:var(--platinum); opacity:0.45; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.g-tag { font-size:6px; letter-spacing:0.2em; padding:1px 4px; border:1px solid currentColor; margin-left:4px; opacity:0.9; }
+.g-time { font-family:'DM Mono', monospace; font-size:12px; color:var(--gold-bright); font-variant-numeric:tabular-nums; flex-shrink:0; }
+[data-theme="classic"] .g-score, [data-theme="classic"] .g-time { color:#776e65; font-weight:700; }
+.g-empty { font-size:8px; letter-spacing:0.15em; color:var(--platinum); opacity:0.4; line-height:1.9; padding:0.5rem 0; }
+.g-more { margin-top:0.7rem; width:100%; }
+
 /* ════════ INTRO ════════ */
 #intro-screen {
   position:fixed; inset:0; z-index:999;
@@ -820,6 +865,7 @@ header::before {
     </div>
 
     <div class="ctrl-row">
+      <div class="timer" id="timer"><span id="timer-val">00:00</span></div>
       <button class="btn" onclick="undoMove()">↩ Undo</button>
       <button class="btn" onclick="newGame()">↺ New</button>
       <button class="btn" onclick="openSettings()">⚙ Settings</button>
@@ -843,6 +889,16 @@ header::before {
             <span class="swatch cls"><i></i><i></i><i></i></span>CLASSIC
           </button>
         </div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-title">✦ GAMES</div>
+        <div class="g-summary" id="g-summary"></div>
+        <div class="g-tabs">
+          <button class="vpick" data-sort="recent" onclick="setGamesSort('recent')">RECENT</button>
+          <button class="vpick" data-sort="top" onclick="setGamesSort('top')">TOP</button>
+        </div>
+        <div class="g-list" id="g-list"></div>
       </div>
 
       <div class="sec">
@@ -870,6 +926,7 @@ header::before {
         <div class="sec-title danger">✦ DANGER ZONE</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn danger" onclick="clearBest()">✕ RESET BEST</button>
+          <button class="btn danger" onclick="clearGames()">✕ CLEAR GAMES</button>
           <button class="btn danger" onclick="newGame();closeSettings();">✕ RESTART</button>
         </div>
       </div>
@@ -936,6 +993,7 @@ let tileId = 0;
 let winShown = false;
 let fx = null;          // effects waiting for the current slide to finish
 let overTimer = null;
+let introDismissed = false;
 
 // Board geometry, read from CSS once (and again on resize) instead of on every tile
 let TS = 110, GAP = 10;
@@ -985,12 +1043,16 @@ function addTile() {
 
 function newGame() {
   const intro = document.getElementById('intro-screen');
-  if(intro && intro.style.display !== 'none') {
+  if(intro && !introDismissed) {
+    introDismissed = true;
     intro.style.animation = 'intro-exit 0.5s ease forwards';
     setTimeout(() => intro.style.display = 'none', 500);
   }
   clearTimeout(overTimer);
   flushFx();
+  // A game abandoned mid-way still goes on the board, marked as stopped
+  if(cur && !cur.over && cur.moves > 0) fileRecord('quit');
+  startRecord();
   grid = makeGrid();
   score = 0; moves = 0; combo = 0; winShown = false;
   shownMilestones.clear();
@@ -1002,6 +1064,7 @@ function newGame() {
   updateScore(0);
   movesEl.textContent = '0';
   hideOverlay();
+  syncClock();
 }
 
 // ── RENDER ──
@@ -1149,6 +1212,7 @@ function slide(dir) {
     combo = 0; hideCombo();
   }
 
+  updateRecord();
   checkGameOver();
 }
 
@@ -1423,6 +1487,9 @@ function undoMove() {
   updateScore(0);
   movesEl.textContent = moves;
   hideOverlay();
+  if(cur.over) unfileRecord();   // undoing out of game over resumes the same game and its clock
+  updateRecord();
+  syncClock();
 }
 
 // ── GAME OVER / WIN ──
@@ -1432,6 +1499,9 @@ function checkGameOver() {
     if(c<SIZE-1 && grid[r][c].value === grid[r][c+1]?.value) return;
     if(r<SIZE-1 && grid[r][c].value === grid[r+1][c]?.value) return;
   }
+  cur.over = true;
+  fileRecord('over');
+  renderClock();
   clearTimeout(overTimer);
   overTimer = setTimeout(showGameOver, 500);
 }
@@ -1441,6 +1511,7 @@ function showGameOver() {
   o.innerHTML = `
     <div class="overlay-title over">GAME OVER</div>
     <div class="overlay-score">Score: ${fmt(score)}</div>
+    <div class="overlay-sub">REACHED ${fmt(cur.maxTile)} · TIME ${fmtTime(cur.time)}</div>
     <div class="overlay-sub">BEST: ${fmt(best)}</div>
     <div class="overlay-row">
       <button class="btn" onclick="undoMove()">↩ UNDO</button>
@@ -1520,7 +1591,7 @@ function crownSig() {
 
 // ── INPUT ──
 function settingsOpen() { return document.getElementById('settings-overlay').style.display === 'flex'; }
-function introOpen()    { const i = document.getElementById('intro-screen'); return !!i && i.style.display !== 'none'; }
+function introOpen()    { return !introDismissed; }
 
 // Keyboard: remapped keys first, WASD as a fallback — one press, one move
 const WASD = {KeyW:'up', KeyS:'down', KeyA:'left', KeyD:'right'};
@@ -1581,10 +1652,12 @@ window.addEventListener('resize', () => {
 function openSettings() {
   document.getElementById('settings-overlay').style.display = 'flex';
   buildSettingsUI();
+  syncClock();   // the clock pauses while settings are open
 }
 function closeSettings() {
   document.getElementById('settings-overlay').style.display = 'none';
   stopListening();
+  syncClock();
 }
 // Tapping the dimmed backdrop closes settings
 document.getElementById('settings-overlay').addEventListener('click', e => {
@@ -1646,6 +1719,7 @@ function buildSettingsUI() {
     kBoxes.appendChild(box);
   });
 
+  buildGamesUI();
   buildValuePicker();
   buildPlaceGrid();
 }
@@ -1743,6 +1817,8 @@ function placeTileAt(r, c) {
   grid[r][c] = t;
   makeEl(t, true);
   updateScore(0);
+  cur.edited = true;   // flagged on the games board
+  updateRecord();
   buildPlaceGrid();
   const st = document.getElementById('place-status');
   st.textContent = `✦ Placed ${selectedPlaceValue} at row ${r+1}, col ${c+1}`;
@@ -1761,11 +1837,149 @@ function clearBest() {
   st._t = setTimeout(() => { st.textContent = ''; }, 2000);
 }
 
+// ════════════════════════════
+//   STOPWATCH & GAMES BOARD
+// ════════════════════════════
+// cur = the game being played. Finished games go to `games`; the running one is
+// saved separately after every move, so a game cut off by closing the app is not lost.
+const GAMES_KEY = '2048-obs-games', CURRENT_KEY = '2048-obs-current';
+let games = [];
+let cur = null;
+let runSince = 0;           // Date.now() when the clock last started; 0 = stopped
+let gamesSort = 'recent', gamesShowAll = false;
+const GAMES_PAGE = 20;
+
+function loadGames() {
+  try { games = JSON.parse(localStorage.getItem(GAMES_KEY) || '[]'); } catch(e) { games = []; }
+  if(!Array.isArray(games)) games = [];
+}
+function saveGames() {
+  try { localStorage.setItem(GAMES_KEY, JSON.stringify(games)); } catch(e){}
+}
+
+function elapsed() { return cur ? cur.time + (runSince ? Date.now() - runSince : 0) : 0; }
+function clockStop() { if(runSince) { cur.time += Date.now() - runSince; runSince = 0; } }
+// The clock runs only while you can actually play: not behind the intro, settings, or with the app in the background
+function syncClock() {
+  const run = cur && !cur.over && !document.hidden && !settingsOpen() && !introOpen();
+  if(run && !runSince) runSince = Date.now();
+  if(!run) clockStop();
+  document.getElementById('timer').classList.toggle('paused', !run && !!cur && !cur.over && cur.moves > 0);
+  renderClock();
+}
+
+function fmtTime(ms) {
+  const s = Math.floor(ms / 1000), h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, sec = s % 60;
+  const mm = String(m).padStart(2,'0'), ss = String(sec).padStart(2,'0');
+  return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+const timerVal = document.getElementById('timer-val');
+let shownTime = '';
+function renderClock() {
+  const t = fmtTime(elapsed());
+  if(t !== shownTime) { timerVal.textContent = t; shownTime = t; }
+}
+setInterval(renderClock, 250);
+
+function startRecord() {
+  cur = { id: Date.now(), date: Date.now(), time: 0, score: 0, moves: 0, maxTile: 0, edited: false, over: false };
+  runSince = 0;
+}
+function saveCurrent() {
+  if(!cur) return;
+  try { localStorage.setItem(CURRENT_KEY, JSON.stringify({...cur, time: elapsed()})); } catch(e){}
+}
+function updateRecord() {
+  cur.score = score; cur.moves = moves; cur.maxTile = getMaxVal();
+  saveCurrent();
+}
+function toEntry(c, status) {
+  return { id:c.id, date:c.date, score:c.score, maxTile:c.maxTile, moves:c.moves, time:c.time, status, edited:!!c.edited };
+}
+// status: 'over' (no moves left) or 'quit' (new game started / app closed mid-game)
+function fileRecord(status) {
+  clockStop();
+  cur.score = score; cur.moves = moves; cur.maxTile = getMaxVal();
+  games = games.filter(g => g.id !== cur.id);
+  games.push(toEntry(cur, status));
+  saveGames();
+  try { localStorage.removeItem(CURRENT_KEY); } catch(e){}
+}
+function unfileRecord() {
+  games = games.filter(g => g.id !== cur.id);
+  saveGames();
+  cur.over = false;
+}
+function recoverUnfinished() {
+  try {
+    const c = JSON.parse(localStorage.getItem(CURRENT_KEY) || 'null');
+    if(c && c.moves > 0 && !games.some(g => g.id === c.id)) { games.push(toEntry(c, 'quit')); saveGames(); }
+    localStorage.removeItem(CURRENT_KEY);
+  } catch(e){}
+}
+
+document.addEventListener('visibilitychange', () => { syncClock(); if(document.hidden) saveCurrent(); });
+window.addEventListener('pagehide', saveCurrent);
+
+function setGamesSort(s) { gamesSort = s; gamesShowAll = false; buildGamesUI(); }
+
+function fmtDate(ms) {
+  const d = new Date(ms);
+  return d.toLocaleDateString('en-GB', {day:'2-digit', month:'2-digit', year:'2-digit'}) + ' ' +
+         d.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+}
+
+function buildGamesUI() {
+  document.querySelectorAll('.g-tabs .vpick').forEach(b => b.classList.toggle('active', b.dataset.sort === gamesSort));
+
+  const n = games.length;
+  const bestTile  = games.reduce((m, g) => Math.max(m, g.maxTile), 0);
+  const bestScore = games.reduce((m, g) => Math.max(m, g.score), 0);
+  const total     = games.reduce((m, g) => m + g.time, 0);
+  document.getElementById('g-summary').innerHTML = `
+    <div class="g-stat"><b>${n}</b><span>GAMES</span></div>
+    <div class="g-stat"><b>${bestTile ? fmt(bestTile) : '—'}</b><span>BEST TILE</span></div>
+    <div class="g-stat"><b>${bestScore ? fmt(bestScore) : '—'}</b><span>BEST SCORE</span></div>
+    <div class="g-stat"><b>${fmtTime(total)}</b><span>TOTAL TIME</span></div>`;
+
+  const list = document.getElementById('g-list');
+  if(!n) {
+    list.innerHTML = '<div class="g-empty">No games yet. Every game you play is saved here — the tile you reached, your score and how long it took.</div>';
+    return;
+  }
+  const sorted = [...games].sort(gamesSort === 'top'
+    ? (a, b) => b.maxTile - a.maxTile || b.score - a.score || a.time - b.time
+    : (a, b) => b.date - a.date);
+  const rows = gamesShowAll ? sorted : sorted.slice(0, GAMES_PAGE);
+
+  list.innerHTML = rows.map((g, i) => `
+    <div class="g-row">
+      <span class="g-rank">${i + 1}</span>
+      <span class="mini-tile ${tileClass(g.maxTile)}">${fmt(g.maxTile)}</span>
+      <div class="g-main">
+        <div class="g-score">${fmt(g.score)} <small>PTS</small></div>
+        <div class="g-meta">${fmtDate(g.date)} · ${g.moves} MOVES${g.status === 'quit' ? '<span class="g-tag">STOPPED</span>' : ''}${g.edited ? '<span class="g-tag">✦ EDITED</span>' : ''}</div>
+      </div>
+      <span class="g-time">${fmtTime(g.time)}</span>
+    </div>`).join('') +
+    (!gamesShowAll && n > GAMES_PAGE
+      ? `<button class="btn g-more" onclick="gamesShowAll=true;buildGamesUI()">SHOW ALL ${n}</button>` : '');
+}
+
+function clearGames() {
+  if(!confirm('Delete all saved games? This cannot be undone.')) return;
+  games = [];
+  saveGames();
+  buildGamesUI();
+}
+
 // ── INIT ──
 measure();
 buildBgGrid();
 resizeParticleCanvas();
 applyTheme(settings.theme);
+loadGames();
+recoverUnfinished();
 newGame();
 
 // ── OFFLINE / HOME-SCREEN APP ──

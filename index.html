@@ -1920,7 +1920,7 @@ function buildGamesUI() {
   const n = games.length;
   const bestTile  = games.reduce((m, g) => Math.max(m, g.maxTile), 0);
   const bestScore = games.reduce((m, g) => Math.max(m, g.score), 0);
-  const total     = games.reduce((m, g) => m + g.time, 0);
+  const total     = games.reduce((m, g) => m + (g.time || 0), 0);
   document.getElementById('g-summary').innerHTML = `
     <div class="g-stat"><b>${n}</b><span>GAMES</span></div>
     <div class="g-stat"><b>${bestTile ? fmt(bestTile) : '—'}</b><span>BEST TILE</span></div>
@@ -1933,7 +1933,7 @@ function buildGamesUI() {
     return;
   }
   const sorted = [...games].sort(gamesSort === 'top'
-    ? (a, b) => b.maxTile - a.maxTile || b.score - a.score || a.time - b.time
+    ? (a, b) => b.maxTile - a.maxTile || b.score - a.score || (a.time ?? Infinity) - (b.time ?? Infinity)
     : (a, b) => b.date - a.date);
   const rows = gamesShowAll ? sorted : sorted.slice(0, GAMES_PAGE);
 
@@ -1942,20 +1942,48 @@ function buildGamesUI() {
       <span class="g-rank">${i + 1}</span>
       <span class="mini-tile ${tileClass(g.maxTile)}">${fmt(g.maxTile)}</span>
       <div class="g-main">
-        <div class="g-score"><small>SCORE</small>${g.score.toLocaleString('en-US')}</div>
-        <div class="g-meta">${fmtDate(g.date)} · ${g.moves} MOVES${g.status === 'quit' ? '<span class="g-tag">STOPPED</span>' : ''}${g.edited ? '<span class="g-tag">✦ EDITED</span>' : ''}</div>
+        <div class="g-score"><small>SCORE</small>${gameScore(g)}</div>
+        <div class="g-meta">${g.manual ? fmtDay(g.date) : fmtDate(g.date)}${g.moves == null ? '' : ` · ${g.moves} MOVES`}${g.status === 'quit' ? '<span class="g-tag">STOPPED</span>' : ''}${g.edited ? '<span class="g-tag">✦ EDITED</span>' : ''}</div>
       </div>
-      <span class="g-time"><small>TIME</small>${fmtTime(g.time)}</span>
+      <span class="g-time"><small>TIME</small>${gameTime(g)}</span>
       <button class="g-del" onclick="deleteGame(${g.id})" aria-label="Delete game">✕</button>
     </div>`).join('') +
     (!gamesShowAll && n > GAMES_PAGE
       ? `<button class="btn g-more" onclick="gamesShowAll=true;buildGamesUI()">SHOW ALL ${n}</button>` : '');
 }
 
+// Games entered by hand may have an approximate score and no time or move count
+function gameScore(g) { return g.approx ? fmt(g.score) : g.score.toLocaleString('en-US'); }
+function gameTime(g)  { return g.time == null ? 'UNKNOWN' : fmtTime(g.time); }
+function fmtDay(ms)   { return new Date(ms).toLocaleDateString('en-GB', {day:'2-digit', month:'2-digit', year:'2-digit'}); }
+
+// Games played before the board existed, added once to the phone's board.
+// Each is added a single time (tracked by key), so deleting one keeps it deleted.
+const SEED_GAMES = [
+  { key: 'seed-4096-2026-09-24',
+    game: { id: new Date(2026, 8, 24, 12, 0).getTime(), date: new Date(2026, 8, 24, 12, 0).getTime(),
+            score: 52200, approx: true, maxTile: 4096, moves: null, time: null,
+            status: 'over', edited: false, manual: true } },
+];
+function addSeedGames() {
+  let done;
+  try { done = JSON.parse(localStorage.getItem('2048-obs-seeds') || '[]'); } catch(e) { done = []; }
+  let changed = false;
+  SEED_GAMES.forEach(s => {
+    if(done.includes(s.key)) return;
+    if(!games.some(g => g.id === s.game.id)) games.push({...s.game});
+    done.push(s.key);
+    changed = true;
+  });
+  if(!changed) return;
+  saveGames();
+  try { localStorage.setItem('2048-obs-seeds', JSON.stringify(done)); } catch(e){}
+}
+
 function deleteGame(id) {
   const g = games.find(x => x.id === id);
   if(!g) return;
-  if(!confirm(`Delete this game?\n\nScore ${g.score.toLocaleString('en-US')} · reached ${g.maxTile} · ${fmtTime(g.time)}`)) return;
+  if(!confirm(`Delete this game?\n\nScore ${gameScore(g)} · reached ${g.maxTile} · ${gameTime(g)}`)) return;
   games = games.filter(x => x.id !== id);
   saveGames();
   buildGamesUI();
@@ -1975,6 +2003,7 @@ resizeParticleCanvas();
 applyTheme(settings.theme);
 loadGames();
 recoverUnfinished();
+addSeedGames();
 newGame();
 
 // ── OFFLINE / HOME-SCREEN APP ──

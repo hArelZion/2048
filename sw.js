@@ -1,5 +1,5 @@
 // Offline support: cache the app shell, and cache Google Fonts the first time they load.
-const CACHE = 'obsidian-2048-v4';
+const CACHE = 'obsidian-2048-v5';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './apple-touch-icon.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {

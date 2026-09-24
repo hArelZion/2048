@@ -11,22 +11,59 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <title>2048 — OBSIDIAN</title>
+<script>
+// Apply the saved theme before first paint, so the classic theme never flashes dark on launch
+try {
+  var s = JSON.parse(localStorage.getItem('2048-obs-settings') || '{}');
+  if (s.settings && s.settings.theme === 'classic') document.documentElement.dataset.theme = 'classic';
+} catch (e) {}
+</script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,600;0,700;1,300;1,600&family=DM+Mono:wght@300;400;500&display=swap');
 
+/* ════════ THEME TOKENS ════════ */
 :root {
-  --bg:        #08090c;
-  --surface:   #0e1016;
-  --border:    rgba(255,220,100,0.12);
-  --gold:      #c9a84c;
-  --gold-bright:#f0c96a;
-  --gold-dim:  rgba(201,168,76,0.3);
-  --platinum:  #e8e4d8;
-  --ember:     #ff6b2b;
-  --ice:       #7dd3fc;
-  --gap:       10px;
-  --radius:    8px;
-  --tile-size: 110px;
+  --bg:          #08090c;
+  --surface:     #0e1016;
+  --border:      rgba(255,220,100,0.12);
+  --gold:        #c9a84c;
+  --gold-bright: #f0c96a;
+  --platinum:    #e8e4d8;
+  --ember:       #ff6b2b;
+  --muted:       rgba(201,168,76,0.4);
+  --cell:        rgba(255,255,255,0.025);
+  --cell-border: rgba(255,255,255,0.02);
+  --panel:       #0e1016;
+  --panel-border:rgba(201,168,76,0.22);
+  --sig:         rgba(201,168,76,0.22);
+  --font-display:'Cormorant Garamond', serif;
+  --font-ui:     'DM Mono', monospace;
+  --gap:         10px;
+  --radius:      8px;
+  --board-radius:0px;
+  --tile-size:   110px;
+  --slide:       100ms;
+}
+
+/* Original 2048 palette (Gabriele Cirulli, 2014 — style/main.css) */
+:root[data-theme="classic"] {
+  --bg:          #faf8ef;
+  --surface:     #bbada0;
+  --border:      transparent;
+  --gold:        #8f7a66;
+  --gold-bright: #776e65;
+  --platinum:    #776e65;
+  --ember:       #f65e3b;
+  --muted:       #8f7a66;
+  --cell:        rgba(238,228,218,0.35);
+  --cell-border: transparent;
+  --panel:       #faf8ef;
+  --panel-border:#bbada0;
+  --sig:         rgba(119,110,101,0.45);
+  --font-display:"Clear Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-ui:     "Clear Sans", "Helvetica Neue", Arial, sans-serif;
+  --radius:      3px;
+  --board-radius:6px;
 }
 
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -34,7 +71,7 @@
 html, body {
   width:100%; height:100%; min-height:100vh;
   background: var(--bg);
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-ui);
   color: var(--platinum);
   overflow-x: hidden;
   cursor: default;
@@ -69,6 +106,15 @@ body::after {
   background: radial-gradient(ellipse at 50% 40%, rgba(201,168,76,0.04) 0%, transparent 65%);
   pointer-events:none; z-index:0;
 }
+[data-theme="classic"] body::before,
+[data-theme="classic"] body::after { display:none; }
+
+/* Classic theme: dark band behind the iPhone clock, so it stays readable on the light page */
+#statusbar-bg { display:none; }
+[data-theme="classic"] #statusbar-bg {
+  display:block; position:fixed; top:0; left:0; right:0;
+  height: env(safe-area-inset-top); background:#8f7a66; z-index:1001;
+}
 
 /* ── LAYOUT ── */
 #app {
@@ -80,7 +126,6 @@ body::after {
   align-items: center;
   /* Clear the iPhone notch and home indicator in full-screen mode */
   padding: max(2rem, calc(env(safe-area-inset-top) + 1rem)) 1rem max(3rem, calc(env(safe-area-inset-bottom) + 1rem));
-  gap: 0;
 }
 
 /* ── HEADER ── */
@@ -93,9 +138,18 @@ header {
   margin-bottom: 1.8rem;
   position: relative;
 }
+/* Static glow behind the logo (a filter on the animated text would repaint every frame) */
+header::before {
+  content:''; position:absolute; top:-10px; left:50%; width:260px; height:110px;
+  transform:translateX(-50%);
+  background: radial-gradient(ellipse, rgba(201,168,76,0.16) 0%, transparent 70%);
+  pointer-events:none;
+}
+[data-theme="classic"] header::before { display:none; }
 
 .logo {
-  font-family: 'Cormorant Garamond', serif;
+  position: relative;
+  font-family: var(--font-display);
   font-size: clamp(3rem, 10vw, 5.5rem);
   font-weight: 700;
   letter-spacing: 0.15em;
@@ -106,7 +160,10 @@ header {
   background-clip: text;
   background-size: 300% 300%;
   animation: gold-shimmer 6s ease infinite;
-  filter: drop-shadow(0 0 40px rgba(201,168,76,0.25));
+}
+[data-theme="classic"] .logo {
+  background: none; -webkit-text-fill-color: #776e65; color:#776e65;
+  animation: none; letter-spacing: 0.02em;
 }
 
 @keyframes gold-shimmer {
@@ -117,7 +174,7 @@ header {
 .tagline {
   font-size: 9px;
   letter-spacing: 0.55em;
-  color: rgba(201,168,76,0.4);
+  color: var(--muted);
   margin-top: 0.3rem;
   text-transform: uppercase;
 }
@@ -141,42 +198,38 @@ header {
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  transition: border-color 0.3s;
 }
 .score-box::before {
   content: attr(data-label);
   font-size: 8px;
   letter-spacing: 0.45em;
-  color: rgba(201,168,76,0.4);
+  color: var(--muted);
   text-transform: uppercase;
 }
 .score-val {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: var(--font-display);
   font-size: 1.8rem;
   font-weight: 600;
   color: var(--gold-bright);
   text-shadow: 0 0 20px rgba(240,201,106,0.4);
   line-height: 1;
-  transition: transform 0.1s;
 }
-.score-box.bump .score-val { animation: score-bump 0.3s cubic-bezier(0.36,0.07,0.19,0.97); }
-@keyframes score-bump {
-  0%  { transform: scale(1); }
-  40% { transform: scale(1.25); color: #fff; }
-  100%{ transform: scale(1); }
-}
+[data-theme="classic"] .score-box { border-radius:3px; }
+[data-theme="classic"] .score-box::before { color:#eee4da; font-weight:700; letter-spacing:0.2em; }
+[data-theme="classic"] .score-val { color:#fff; text-shadow:none; font-weight:700; font-size:1.5rem; }
 
 /* Score delta pop */
 .score-delta {
   position: absolute;
   top: -18px; right: 8px;
-  font-family: 'Cormorant Garamond', serif;
+  font-family: var(--font-display);
   font-size: 14px;
   font-weight: 600;
   color: var(--gold-bright);
   pointer-events: none;
-  animation: delta-float 1s ease forwards;
+  animation: delta-float 0.8s ease forwards;
 }
+[data-theme="classic"] .score-delta { color: rgba(119,110,101,0.9); font-weight:700; }
 @keyframes delta-float {
   0%   { opacity:1; transform: translateY(0); }
   100% { opacity:0; transform: translateY(-30px); }
@@ -187,13 +240,13 @@ header {
   position: absolute;
   top: -2rem;
   right: 0;
-  font-family: 'Cormorant Garamond', serif;
+  font-family: var(--font-display);
   font-size: 1rem;
   font-weight: 600;
   font-style: italic;
   color: var(--ember);
-  text-shadow: 0 0 15px rgba(255,107,43,0.6);
   letter-spacing: 0.05em;
+  white-space: nowrap;
   opacity: 0;
   transition: opacity 0.3s;
   pointer-events: none;
@@ -212,27 +265,22 @@ header {
 .btn {
   background: transparent;
   border: 1px solid var(--border);
-  color: rgba(201,168,76,0.5);
-  font-family: 'DM Mono', monospace;
+  color: rgba(201,168,76,0.6);
+  font-family: var(--font-ui);
   font-size: 9px;
   letter-spacing: 0.3em;
-  padding: 7px 14px;
+  padding: 8px 14px;
   cursor: pointer;
   text-transform: uppercase;
-  transition: all 0.2s;
-  position: relative;
-  overflow: hidden;
+  transition: border-color 0.2s, color 0.2s;
 }
-.btn::before {
-  content:'';
-  position: absolute; inset:0;
-  background: linear-gradient(90deg, transparent, rgba(201,168,76,0.08), transparent);
-  transform: translateX(-100%);
-  transition: transform 0.4s;
+.btn:active { transform: scale(0.96); }
+[data-theme="classic"] .btn {
+  background:#8f7a66; color:#f9f6f2; border:none; border-radius:3px;
+  font-weight:700; letter-spacing:0.12em; font-size:10px;
 }
-.btn:hover::before { transform: translateX(100%); }
-.btn:hover { border-color: rgba(201,168,76,0.4); color: var(--gold); }
-.btn:active { transform: scale(0.97); }
+.btn.danger { border-color:rgba(255,50,50,0.3); color:rgba(255,80,80,0.7); font-size:8px; }
+[data-theme="classic"] .btn.danger { background:#f65e3b; color:#fff; }
 
 /* ── BOARD AREA ── */
 #board-wrap {
@@ -242,12 +290,12 @@ header {
   margin: 0 auto;
 }
 
-/* Background grid */
 #board-bg {
   position: absolute;
   inset: 0;
   background: var(--surface);
   border: 1px solid var(--border);
+  border-radius: var(--board-radius);
   display: grid;
   grid-template-columns: repeat(4, var(--tile-size));
   grid-template-rows: repeat(4, var(--tile-size));
@@ -257,101 +305,133 @@ header {
     0 0 0 1px rgba(201,168,76,0.04),
     0 25px 80px rgba(0,0,0,0.6),
     0 0 60px rgba(201,168,76,0.04);
+  transition: box-shadow 0.6s;
 }
+[data-theme="classic"] #board-bg { box-shadow:none; border:none; }
+
+/* Board glow for high tiles — a box-shadow on the static board, not a filter over the moving tiles */
+#board-wrap.glow-gold #board-bg { box-shadow: 0 25px 80px rgba(0,0,0,0.6), 0 0 40px rgba(201,168,76,0.35); }
+#board-wrap.glow-2048 #board-bg { box-shadow: 0 25px 80px rgba(0,0,0,0.6), 0 0 60px rgba(255,255,200,0.5); }
+#board-wrap.glow-high #board-bg { box-shadow: 0 25px 80px rgba(0,0,0,0.6), 0 0 70px rgba(255,0,255,0.45); }
+[data-theme="classic"] #board-wrap[class] #board-bg { box-shadow:none; }
 
 .bg-cell {
-  background: rgba(255,255,255,0.025);
+  background: var(--cell);
   border-radius: var(--radius);
-  border: 1px solid rgba(255,255,255,0.02);
+  border: 1px solid var(--cell-border);
 }
 
-/* Tile layer */
 #tile-layer {
   position: absolute;
   inset: 0;
   pointer-events: none;
 }
 
-/* ── TILES ── */
+/* ── TILES ──
+   .tile is only positioned (GPU transform); .tile-inner carries the look and the pop animations. */
 .tile {
   position: absolute;
+  left: 0; top: 0;
   width: var(--tile-size);
   height: var(--tile-size);
+  z-index: 2;
+  will-change: transform;
+  transition: transform var(--slide) cubic-bezier(0.25, 0.8, 0.35, 1);
+}
+.tile.consumed { z-index: 1; }
+#tile-layer.no-anim .tile { transition: none; }
+
+.tile-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
   border-radius: var(--radius);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: 'Cormorant Garamond', serif;
+  font-family: var(--font-display);
   font-weight: 700;
-  user-select: none;
-  will-change: transform, left, top;
-  transition:
-    left 0.13s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-    top  0.13s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  line-height: 1;
+}
+/* Pulsing glow for 1024+ tiles: opacity-only animation on a pre-drawn shadow (cheap on iPhone) */
+.tile-inner::before {
+  content:''; position:absolute; inset:-1px; border-radius:inherit;
+  box-shadow: var(--pulse, none); opacity:0; pointer-events:none; will-change: opacity;
 }
 
-.tile.new     { animation: tile-appear 0.25s cubic-bezier(0.34,1.56,0.64,1) both; }
-.tile.merged  { animation: tile-merge  0.22s cubic-bezier(0.34,1.56,0.64,1) both; }
-
-@keyframes tile-appear {
-  0%   { transform: scale(0) rotate(-5deg); opacity:0; }
-  100% { transform: scale(1) rotate(0deg);  opacity:1; }
+/* Merge effects */
+.fx-flash {
+  position:absolute; inset:0; border-radius:var(--radius);
+  background:#fff; opacity:0; pointer-events:none;
 }
-@keyframes tile-merge {
-  0%   { transform: scale(1); }
-  45%  { transform: scale(1.22); }
-  100% { transform: scale(1); }
+.fx-ring {
+  position:absolute; inset:0; border-radius:var(--radius);
+  border:2px solid; opacity:0; pointer-events:none;
 }
 
-/* Value-based tile styles */
-.t2    { background:#1c1a14; border:1px solid rgba(255,220,100,0.15); color:#e8e0c8; font-size:2.2rem; }
-.t4    { background:#1e1b10; border:1px solid rgba(255,200,80,0.2);  color:#f0d888; font-size:2.2rem; }
-.t8    { background:#2a1a08; border:1px solid rgba(255,150,50,0.3);  color:#ffaa55; font-size:2.2rem;
+/* Font size by digit count */
+.d1, .d2 { font-size: calc(var(--tile-size) * 0.46); }
+.d3      { font-size: calc(var(--tile-size) * 0.40); }
+.d4      { font-size: calc(var(--tile-size) * 0.32); }
+.d5      { font-size: calc(var(--tile-size) * 0.25); }
+[data-theme="classic"] .d1, [data-theme="classic"] .d2 { font-size: calc(var(--tile-size) * 0.52); }
+[data-theme="classic"] .d3 { font-size: calc(var(--tile-size) * 0.42); }
+[data-theme="classic"] .d4 { font-size: calc(var(--tile-size) * 0.33); }
+[data-theme="classic"] .d5 { font-size: calc(var(--tile-size) * 0.26); }
+
+/* Obsidian tiles */
+.t2    { background:#1c1a14; border:1px solid rgba(255,220,100,0.15); color:#e8e0c8; }
+.t4    { background:#1e1b10; border:1px solid rgba(255,200,80,0.2);  color:#f0d888; }
+.t8    { background:#2a1a08; border:1px solid rgba(255,150,50,0.3);  color:#ffaa55;
          box-shadow:0 0 20px rgba(255,120,30,0.15) inset; }
-.t16   { background:#2e1205; border:1px solid rgba(255,100,30,0.4);  color:#ff8844; font-size:2rem;
+.t16   { background:#2e1205; border:1px solid rgba(255,100,30,0.4);  color:#ff8844;
          box-shadow:0 0 25px rgba(255,80,20,0.2) inset; }
-.t32   { background:#2a0a10; border:1px solid rgba(255,60,60,0.4);   color:#ff6666; font-size:2rem;
+.t32   { background:#2a0a10; border:1px solid rgba(255,60,60,0.4);   color:#ff6666;
          box-shadow:0 0 30px rgba(255,30,30,0.2) inset, 0 4px 20px rgba(200,0,0,0.3); }
-.t64   { background:#1a0520; border:1px solid rgba(200,50,255,0.4);  color:#cc77ff; font-size:2rem;
+.t64   { background:#1a0520; border:1px solid rgba(200,50,255,0.4);  color:#cc77ff;
          box-shadow:0 0 30px rgba(180,0,255,0.25) inset, 0 4px 20px rgba(150,0,200,0.3); }
-.t128  { background:#050d20; border:1px solid rgba(50,150,255,0.5);  color:#88ccff; font-size:1.7rem;
+.t128  { background:#050d20; border:1px solid rgba(50,150,255,0.5);  color:#88ccff;
          box-shadow:0 0 35px rgba(0,100,255,0.3) inset, 0 6px 25px rgba(0,80,200,0.4); }
-.t256  { background:#041520; border:1px solid rgba(0,210,255,0.5);   color:#55ddff; font-size:1.7rem;
+.t256  { background:#041520; border:1px solid rgba(0,210,255,0.5);   color:#55ddff;
          box-shadow:0 0 40px rgba(0,200,255,0.3) inset, 0 6px 30px rgba(0,180,240,0.4); }
-.t512  { background:#041a10; border:1px solid rgba(0,255,150,0.5);   color:#44ffaa; font-size:1.7rem;
+.t512  { background:#041a10; border:1px solid rgba(0,255,150,0.5);   color:#44ffaa;
          box-shadow:0 0 40px rgba(0,255,120,0.3) inset, 0 6px 30px rgba(0,200,100,0.4); }
-.t1024 { background:#1a1604; border:1px solid rgba(255,240,0,0.6);   color:#ffe838; font-size:1.45rem;
+.t1024 { background:#1a1604; border:1px solid rgba(255,240,0,0.6);   color:#ffe838;
          box-shadow:0 0 50px rgba(255,220,0,0.4) inset, 0 8px 35px rgba(200,180,0,0.5);
-         animation: pulse-glow-gold 2s ease infinite; }
+         --pulse: 0 0 70px rgba(255,240,50,0.6) inset, 0 8px 50px rgba(240,220,0,0.7); }
 .t2048 { background: linear-gradient(135deg,#1a0a00,#0a0a1a,#001a0a);
-         border:2px solid rgba(255,255,255,0.8); color:#ffffff; font-size:1.35rem;
+         border:2px solid rgba(255,255,255,0.8); color:#ffffff;
          box-shadow: 0 0 60px rgba(255,255,255,0.5) inset, 0 0 80px rgba(255,200,100,0.6), 0 10px 40px rgba(255,255,255,0.3);
-         animation: pulse-2048 1.5s ease infinite; }
-
-/* High tiles */
-.t4096,
+         --pulse: 0 0 90px rgba(255,255,255,0.8) inset, 0 0 120px rgba(255,220,150,0.9); }
 .tHigh { background: linear-gradient(135deg,#0a001a,#1a000a,#001a1a);
-         border:2px solid rgba(255,100,255,0.9); color:#ff88ff; font-size:1.1rem;
+         border:2px solid rgba(255,100,255,0.9); color:#ff88ff;
          box-shadow: 0 0 80px rgba(255,0,255,0.5) inset, 0 0 100px rgba(200,0,200,0.6);
-         animation: pulse-high 1s ease infinite; }
+         --pulse: 0 0 120px rgba(255,100,255,0.8) inset, 0 0 150px rgba(255,0,255,0.8); }
+.t1024::before { animation: glow-pulse 2s ease-in-out infinite; }
+.t2048::before { animation: glow-pulse 1.5s ease-in-out infinite; }
+.tHigh::before { animation: glow-pulse 1s ease-in-out infinite; }
+@keyframes glow-pulse { 0%,100% { opacity:0; } 50% { opacity:1; } }
 
-@keyframes pulse-glow-gold {
-  0%,100% { box-shadow:0 0 50px rgba(255,220,0,0.4) inset,0 8px 35px rgba(200,180,0,0.5); }
-  50%     { box-shadow:0 0 70px rgba(255,240,50,0.6) inset,0 8px 50px rgba(240,220,0,0.7); }
-}
-@keyframes pulse-2048 {
-  0%,100% { box-shadow:0 0 60px rgba(255,255,255,0.5) inset,0 0 80px rgba(255,200,100,0.6); }
-  50%     { box-shadow:0 0 90px rgba(255,255,255,0.8) inset,0 0 120px rgba(255,220,150,0.9); border-color:rgba(255,255,255,1); }
-}
-@keyframes pulse-high {
-  0%,100% { box-shadow:0 0 80px rgba(255,0,255,0.5) inset,0 0 100px rgba(200,0,200,0.6); }
-  50%     { box-shadow:0 0 120px rgba(255,100,255,0.8) inset,0 0 150px rgba(255,0,255,0.8); }
-}
+/* Classic tiles — exact colours from the original game */
+[data-theme="classic"] .tile-inner { border:none; box-shadow:none; color:#f9f6f2; }
+[data-theme="classic"] .tile-inner::before { display:none; }
+[data-theme="classic"] .t2    { background:#eee4da; color:#776e65; }
+[data-theme="classic"] .t4    { background:#ede0c8; color:#776e65; }
+[data-theme="classic"] .t8    { background:#f2b179; }
+[data-theme="classic"] .t16   { background:#f59563; }
+[data-theme="classic"] .t32   { background:#f67c5f; }
+[data-theme="classic"] .t64   { background:#f65e3b; }
+[data-theme="classic"] .t128  { background:#edcf72; box-shadow:0 0 30px 10px rgba(243,215,116,0.24), inset 0 0 0 1px rgba(255,255,255,0.14); }
+[data-theme="classic"] .t256  { background:#edcc61; box-shadow:0 0 30px 10px rgba(243,215,116,0.32), inset 0 0 0 1px rgba(255,255,255,0.19); }
+[data-theme="classic"] .t512  { background:#edc850; box-shadow:0 0 30px 10px rgba(243,215,116,0.40), inset 0 0 0 1px rgba(255,255,255,0.24); }
+[data-theme="classic"] .t1024 { background:#edc53f; box-shadow:0 0 30px 10px rgba(243,215,116,0.48), inset 0 0 0 1px rgba(255,255,255,0.29); }
+[data-theme="classic"] .t2048 { background:#edc22e; box-shadow:0 0 30px 10px rgba(243,215,116,0.56), inset 0 0 0 1px rgba(255,255,255,0.33); }
+[data-theme="classic"] .tHigh { background:#3c3a32; }
 
 /* ── PARTICLE CANVAS ── */
 #particles-canvas {
   position: absolute;
-  inset: -60px;
+  left: -60px; top: -60px;
   width: calc(100% + 120px);
   height: calc(100% + 120px);
   pointer-events: none;
@@ -364,7 +444,7 @@ header {
   top: -2.5rem;
   left: 50%;
   transform: translateX(-50%);
-  font-family: 'Cormorant Garamond', serif;
+  font-family: var(--font-display);
   font-size: 0.9rem;
   font-style: italic;
   letter-spacing: 0.15em;
@@ -372,9 +452,10 @@ header {
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.3s;
-  text-shadow: 0 0 20px currentColor;
 }
 #streak.show { opacity: 1; }
+[data-theme="classic"] #streak,
+[data-theme="classic"] #combo-display { color:#f65e3b !important; text-shadow:none !important; font-style:normal; font-weight:700; }
 
 /* ── GAME OVER / WIN OVERLAY ── */
 .overlay {
@@ -384,38 +465,45 @@ header {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  border-radius: 0;
+  border-radius: var(--board-radius);
   z-index: 20;
   gap: 1rem;
+  -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
   animation: overlay-in 0.4s ease both;
 }
-@keyframes overlay-in {
-  from { opacity:0; } to { opacity:1; }
-}
+@keyframes overlay-in { from { opacity:0; } to { opacity:1; } }
 .overlay-gameover { background: rgba(8,4,4,0.9); }
 .overlay-win      { background: rgba(4,6,4,0.88); }
+[data-theme="classic"] .overlay { -webkit-backdrop-filter:none; backdrop-filter:none; }
+[data-theme="classic"] .overlay-gameover { background: rgba(238,228,218,0.73); }
+[data-theme="classic"] .overlay-win      { background: rgba(237,194,46,0.5); }
 
 .overlay-title {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: var(--font-display);
   font-size: clamp(2rem, 8vw, 3.5rem);
   font-weight: 700;
   letter-spacing: 0.1em;
   line-height: 1;
 }
+.overlay-title.over { color:#ff4444; text-shadow:0 0 30px #ff0000; }
+.overlay-title.win  { color:var(--gold-bright); text-shadow:0 0 40px rgba(240,201,106,0.8); }
+[data-theme="classic"] .overlay-title.over { color:#776e65; text-shadow:none; letter-spacing:0; }
+[data-theme="classic"] .overlay-title.win  { color:#f9f6f2; text-shadow:none; letter-spacing:0; }
 .overlay-sub {
   font-size: 10px;
   letter-spacing: 0.4em;
-  opacity: 0.5;
+  opacity: 0.6;
 }
 .overlay-score {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: var(--font-display);
   font-size: 1.5rem;
   font-weight: 300;
   font-style: italic;
   color: var(--gold);
   margin-bottom: 0.5rem;
 }
+.overlay-row { display:flex; gap:8px; margin-top:1rem; }
 
 /* ── MILESTONE FLASH ── */
 #milestone {
@@ -423,7 +511,7 @@ header {
   top: 50%;
   left: 50%;
   transform: translate(-50%,-50%);
-  font-family: 'Cormorant Garamond', serif;
+  font-family: var(--font-display);
   font-size: clamp(2rem, 8vw, 5rem);
   font-weight: 700;
   pointer-events: none;
@@ -432,14 +520,15 @@ header {
   opacity: 0;
   white-space: nowrap;
 }
+[data-theme="classic"] #milestone { color:#776e65 !important; text-shadow:0 2px 24px rgba(237,194,46,0.7) !important; }
 .milestone-anim {
   animation: milestone-flash 1.4s cubic-bezier(0.16,1,0.3,1) forwards;
 }
 @keyframes milestone-flash {
-  0%   { opacity:0; transform:translate(-50%,-50%) scale(0.5); filter:blur(10px); }
-  20%  { opacity:1; transform:translate(-50%,-50%) scale(1.1); filter:blur(0); }
+  0%   { opacity:0; transform:translate(-50%,-50%) scale(0.5); }
+  20%  { opacity:1; transform:translate(-50%,-50%) scale(1.1); }
   70%  { opacity:1; transform:translate(-50%,-50%) scale(1); }
-  100% { opacity:0; transform:translate(-50%,-50%) scale(1.05); filter:blur(4px); }
+  100% { opacity:0; transform:translate(-50%,-50%) scale(1.05); }
 }
 
 /* ── HISTORY / RECENT MERGES ── */
@@ -455,7 +544,7 @@ header {
 .merge-entry {
   font-size: 9px;
   letter-spacing: 0.2em;
-  color: rgba(201,168,76,0.4);
+  color: var(--muted);
   border-left: 2px solid rgba(201,168,76,0.15);
   padding-left: 8px;
   animation: entry-fade 3s ease forwards;
@@ -474,6 +563,29 @@ header {
   color: rgba(255,255,255,0.15);
   text-align: center;
 }
+[data-theme="classic"] #howto { color: rgba(119,110,101,0.6); letter-spacing:0.15em; }
+
+/* ── SIGNATURE (tap for a crown) ── */
+#sig {
+  position: fixed;
+  bottom: calc(0.5rem + env(safe-area-inset-bottom));
+  right: 0.7rem;
+  min-width: 5rem;
+  min-height: 2.4rem;
+  padding: 0.4rem 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  background: none;
+  border: 0;
+  font-family: 'DM Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 0.35em;
+  color: var(--sig);
+  cursor: pointer;
+  z-index: 50;
+}
+#sig .crown { font-size: 18px; letter-spacing: 0; line-height: 1; display:inline-block; }
 
 /* ── BEST BADGE ── */
 #best-badge {
@@ -489,11 +601,7 @@ header {
   transition: opacity 0.3s;
 }
 #best-badge.show { opacity: 1; }
-
-/* Glow pulse on board when high tile reached */
-#board-wrap.glow-gold  { filter: drop-shadow(0 0 30px rgba(201,168,76,0.4)); transition: filter 0.5s; }
-#board-wrap.glow-2048  { filter: drop-shadow(0 0 50px rgba(255,255,200,0.6)); transition: filter 0.5s; }
-#board-wrap.glow-high  { filter: drop-shadow(0 0 60px rgba(255,0,255,0.5)); transition: filter 0.5s; }
+[data-theme="classic"] #best-badge { background:#edc22e; color:#fff; }
 
 /* Mobile */
 @media(max-width:600px){
@@ -505,7 +613,66 @@ header {
   :root{ --tile-size:62px; --gap:5px; }
 }
 
+/* ════════ SETTINGS PANEL ════════ */
+#settings-overlay {
+  display:none; position:fixed; inset:0;
+  background:rgba(0,0,0,0.88);
+  -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
+  z-index:200; align-items:center; justify-content:center;
+}
+[data-theme="classic"] #settings-overlay { background:rgba(119,110,101,0.55); }
+.panel {
+  background:var(--panel); border:1px solid var(--panel-border);
+  width:min(480px,94vw); max-height:88vh; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  padding:2rem; position:relative;
+  box-shadow:0 30px 80px rgba(0,0,0,0.8),0 0 60px rgba(201,168,76,0.05);
+}
+[data-theme="classic"] .panel { border:none; border-radius:6px; box-shadow:0 20px 60px rgba(0,0,0,0.25); }
+.panel-close {
+  position:absolute; top:1rem; right:1rem; background:transparent;
+  border:1px solid var(--panel-border); color:var(--muted);
+  font-family:var(--font-ui); font-size:12px; padding:6px 12px; cursor:pointer;
+}
+[data-theme="classic"] .panel-close { background:#8f7a66; color:#f9f6f2; border:none; border-radius:3px; }
+.panel-title { font-family:var(--font-display); font-size:1.8rem; font-weight:700; color:var(--gold); letter-spacing:0.15em; margin-bottom:0.2rem; }
+.panel-sub   { font-size:8px; letter-spacing:0.4em; color:var(--muted); opacity:0.7; margin-bottom:2rem; }
+.sec { margin-bottom:2rem; }
+.sec-title {
+  font-size:9px; letter-spacing:0.4em; color:var(--muted);
+  margin-bottom:1rem; padding-bottom:0.5rem; border-bottom:1px solid rgba(201,168,76,0.12);
+}
+[data-theme="classic"] .sec-title { font-weight:700; letter-spacing:0.2em; border-color:#bbada0; }
+.sec-title.danger { color:rgba(255,50,50,0.5); border-color:rgba(255,50,50,0.12); }
+.sec-note  { font-size:8px; color:var(--platinum); opacity:0.4; letter-spacing:0.12em; margin-bottom:1rem; line-height:1.9; }
+.sec-label { font-size:8px; letter-spacing:0.3em; color:var(--muted); margin-bottom:0.5rem; }
+
+/* Theme picker */
+.theme-pick { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.theme-opt {
+  display:flex; flex-direction:column; align-items:center; gap:10px;
+  padding:14px 10px; cursor:pointer;
+  background:transparent; border:1px solid var(--panel-border);
+  color:var(--muted); font-family:var(--font-ui); font-size:9px; letter-spacing:0.3em;
+  transition: border-color 0.2s, background 0.2s;
+}
+.theme-opt.active { border-color:var(--gold); background:rgba(201,168,76,0.1); color:var(--gold-bright); }
+[data-theme="classic"] .theme-opt { border-radius:4px; font-weight:700; letter-spacing:0.15em; }
+[data-theme="classic"] .theme-opt.active { background:#eee4da; border-color:#8f7a66; color:#776e65; }
+.swatch { display:grid; grid-template-columns:repeat(3,18px); gap:4px; padding:5px; border-radius:4px; }
+.swatch i { display:block; width:18px; height:18px; border-radius:3px; }
+.swatch.obs { background:#0e1016; border:1px solid rgba(201,168,76,0.25); }
+.swatch.obs i:nth-child(1) { background:#1c1a14; border:1px solid rgba(255,220,100,0.2); }
+.swatch.obs i:nth-child(2) { background:#2a1a08; border:1px solid rgba(255,150,50,0.4); }
+.swatch.obs i:nth-child(3) { background:#1a1604; border:1px solid rgba(255,240,0,0.6); }
+.swatch.cls { background:#bbada0; }
+.swatch.cls i:nth-child(1) { background:#eee4da; }
+.swatch.cls i:nth-child(2) { background:#f2b179; }
+.swatch.cls i:nth-child(3) { background:#edc22e; }
+
 /* Toggle buttons */
+.tog-row { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+.tog-label { font-size:9px; letter-spacing:0.2em; color:var(--platinum); }
+.tog-sub   { font-size:7px; letter-spacing:0.12em; color:var(--platinum); opacity:0.4; margin-top:2px; }
 .tog {
   width:44px;height:24px;background:#1a1a22;border:1px solid rgba(201,168,76,0.2);
   border-radius:12px;position:relative;transition:background 0.2s,border-color 0.2s;cursor:pointer;flex-shrink:0;
@@ -517,43 +684,124 @@ header {
 }
 .tog.on { background:rgba(201,168,76,0.15);border-color:rgba(201,168,76,0.5); }
 .tog.on::after { transform:translateX(20px);background:#c9a84c; }
+[data-theme="classic"] .tog { background:#cdc1b4; border-color:transparent; }
+[data-theme="classic"] .tog::after { background:#fff; }
+[data-theme="classic"] .tog.on { background:#8f7a66; }
 
 /* Key remap boxes */
+.key-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
 .key-box-item {
-  border:1px solid rgba(201,168,76,0.15);background:#08090c;
-  padding:10px 12px;cursor:pointer;transition:all 0.2s;
+  border:1px solid rgba(201,168,76,0.15);background:var(--bg);
+  padding:10px 12px;cursor:pointer;
   display:flex;justify-content:space-between;align-items:center;gap:8px;
 }
-.key-box-item:hover { border-color:rgba(201,168,76,0.4); }
-.key-box-item.listening { border-color:#c9a84c;background:rgba(201,168,76,0.07);animation:key-pulse 0.5s steps(1) infinite; }
+.key-box-item.listening { border-color:var(--gold);background:rgba(201,168,76,0.07);animation:key-pulse 0.5s steps(1) infinite; }
 @keyframes key-pulse { 0%{opacity:1}50%{opacity:0.6} }
-.key-box-label { font-size:8px;letter-spacing:0.25em;color:rgba(201,168,76,0.5); }
-.key-box-val   { font-size:10px;letter-spacing:0.15em;color:#f0c96a;font-family:DM Mono,monospace; }
+.key-box-label { font-size:8px;letter-spacing:0.25em;color:var(--muted); }
+.key-box-val   { font-size:10px;letter-spacing:0.15em;color:var(--gold-bright);font-family:var(--font-ui); }
+[data-theme="classic"] .key-box-item { background:#eee4da; border-color:transparent; border-radius:3px; }
 
 /* Value picker buttons */
+.value-picker { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:0.8rem; }
 .vpick {
-  background:#0e1016;border:1px solid rgba(201,168,76,0.15);
-  color:rgba(201,168,76,0.6);font-family:DM Mono,monospace;font-size:8px;
-  padding:5px 8px;cursor:pointer;letter-spacing:0.1em;transition:all 0.15s;
+  background:var(--surface);border:1px solid rgba(201,168,76,0.15);
+  color:rgba(201,168,76,0.7);font-family:var(--font-ui);font-size:9px;
+  padding:6px 9px;cursor:pointer;letter-spacing:0.1em;
 }
-.vpick.active { background:rgba(201,168,76,0.12);border-color:#c9a84c;color:#f0c96a; }
-.vpick:hover  { border-color:rgba(201,168,76,0.4);color:#f0c96a; }
+.vpick.active { background:rgba(201,168,76,0.12);border-color:var(--gold);color:var(--gold-bright); }
+[data-theme="classic"] .vpick { background:#eee4da; color:#776e65; border-color:transparent; border-radius:3px; font-weight:700; }
+[data-theme="classic"] .vpick.active { background:#8f7a66; color:#f9f6f2; }
 
 /* Place grid cells */
+.place-grid { display:grid; grid-template-columns:repeat(4,50px); grid-template-rows:repeat(4,50px); gap:5px; }
 .pgcell {
-  width:50px;height:50px;background:#0a0b0e;border:1px solid rgba(255,255,255,0.05);
+  width:50px;height:50px;background:var(--bg);border:1px solid rgba(255,255,255,0.06);
   border-radius:4px;cursor:pointer;display:flex;align-items:center;justify-content:center;
-  font-family:Cormorant Garamond,serif;font-size:11px;color:rgba(255,255,255,0.4);
-  transition:all 0.15s;
+  font-family:var(--font-display);font-size:12px;color:rgba(255,255,255,0.4);
 }
-.pgcell:hover { border-color:rgba(201,168,76,0.5);background:rgba(201,168,76,0.06); }
+.pgcell.filled { color:var(--gold); border-color:rgba(201,168,76,0.3); }
+[data-theme="classic"] .pgcell { background:rgba(238,228,218,0.6); border-color:transparent; color:#bbada0; }
+[data-theme="classic"] .pgcell.filled { background:#eee4da; color:#776e65; font-weight:700; }
+.place-status { font-size:8px; letter-spacing:0.2em; color:var(--muted); margin-top:0.5rem; min-height:1.2em; }
+
+/* ════════ INTRO ════════ */
+#intro-screen {
+  position:fixed; inset:0; z-index:999;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  background:var(--bg); overflow:hidden;
+}
+.intro-orb {
+  position:absolute; top:50%; left:50%; width:400px; height:400px;
+  transform:translate(-50%,-50%);
+  background:radial-gradient(circle,rgba(201,168,76,0.07) 0%,transparent 70%);
+  border-radius:50%; animation:orb-pulse 3s ease-in-out infinite; pointer-events:none;
+}
+.intro-inner { position:relative; z-index:2; display:flex; flex-direction:column; align-items:center; text-align:center; }
+.intro-pre {
+  font-family:var(--font-ui); font-size:9px; letter-spacing:0.6em; color:rgba(201,168,76,0.4);
+  margin-bottom:1.5rem; text-transform:uppercase; animation:intro-fade-in 1s 0.3s both;
+}
+#intro-number {
+  font-family:var(--font-display); font-weight:700; font-size:clamp(7rem,25vw,14rem);
+  line-height:0.85; letter-spacing:-0.02em;
+  background:linear-gradient(135deg,#fff8e7 0%,#c9a84c 35%,#f0c96a 55%,#c9a84c 70%,#fff8e7 100%);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+  background-size:300% 300%;
+  animation:gold-shimmer 4s ease infinite, intro-title-in 1.2s 0.1s cubic-bezier(0.16,1,0.3,1) both;
+}
+.intro-sub {
+  font-family:var(--font-display); font-style:italic; font-size:clamp(1rem,3vw,1.6rem); font-weight:300;
+  color:rgba(232,228,216,0.45); letter-spacing:0.3em; margin-top:1.2rem;
+  animation:intro-fade-in 1s 0.8s both;
+}
+.intro-div { display:flex; align-items:center; gap:1.2rem; margin-top:2.5rem; animation:intro-fade-in 1s 1.1s both; }
+.intro-div span { width:60px; height:1px; background:linear-gradient(90deg,transparent,rgba(201,168,76,0.4)); }
+.intro-div span:last-child { background:linear-gradient(90deg,rgba(201,168,76,0.4),transparent); }
+.intro-div b { font-size:10px; font-weight:400; color:rgba(201,168,76,0.4); }
+#intro-play-btn {
+  margin-top:2.5rem; background:transparent; border:1px solid rgba(201,168,76,0.4); color:#c9a84c;
+  font-family:var(--font-ui); font-size:10px; letter-spacing:0.45em;
+  padding:14px 44px; cursor:pointer; text-transform:uppercase;
+  animation:intro-fade-in 1s 1.4s both;
+}
+.intro-hint {
+  font-family:var(--font-ui); font-size:8px; letter-spacing:0.3em; color:rgba(255,255,255,0.15);
+  margin-top:1.5rem; line-height:2.2; animation:intro-fade-in 1s 1.7s both;
+}
+[data-theme="classic"] .intro-orb { display:none; }
+[data-theme="classic"] .intro-pre { color:#8f7a66; letter-spacing:0.3em; font-weight:700; }
+[data-theme="classic"] #intro-number { background:none; -webkit-text-fill-color:#776e65; color:#776e65; animation:intro-title-in 1.2s 0.1s cubic-bezier(0.16,1,0.3,1) both; }
+[data-theme="classic"] .intro-sub { color:#776e65; font-style:normal; letter-spacing:0.15em; }
+[data-theme="classic"] .intro-div span { background:#bbada0; }
+[data-theme="classic"] .intro-div b { color:#bbada0; }
+[data-theme="classic"] #intro-play-btn { background:#8f7a66; border:none; border-radius:3px; color:#f9f6f2; font-weight:700; letter-spacing:0.25em; }
+[data-theme="classic"] .intro-hint { color:rgba(119,110,101,0.6); }
+
+@keyframes intro-title-in {
+  from { opacity:0; transform:scale(0.85) translateY(20px); }
+  to   { opacity:1; transform:scale(1) translateY(0); }
+}
+@keyframes intro-fade-in {
+  from { opacity:0; transform:translateY(14px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+@keyframes orb-pulse {
+  0%,100% { transform:translate(-50%,-50%) scale(1);   opacity:0.6; }
+  50%      { transform:translate(-50%,-50%) scale(1.15); opacity:1;   }
+}
+@keyframes intro-exit {
+  0%   { opacity:1; transform:scale(1); }
+  100% { opacity:0; transform:scale(1.05); pointer-events:none; }
+}
 </style>
 </head>
 <body>
+<div id="statusbar-bg"></div>
+
 <div id="app">
   <header>
     <div class="logo">2048</div>
-    <div class="tagline">OBSIDIAN EDITION</div>
+    <div class="tagline" id="tagline">OBSIDIAN EDITION</div>
 
     <div class="score-row">
       <div class="score-box" data-label="Score" id="score-box">
@@ -579,50 +827,52 @@ header {
   </header>
 
   <!-- SETTINGS OVERLAY -->
-  <div id="settings-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);backdrop-filter:blur(10px);z-index:200;align-items:center;justify-content:center;">
-    <div style="background:#0e1016;border:1px solid rgba(201,168,76,0.22);width:min(480px,94vw);max-height:90vh;overflow-y:auto;padding:2rem;position:relative;box-shadow:0 30px 80px rgba(0,0,0,0.8),0 0 60px rgba(201,168,76,0.05);">
+  <div id="settings-overlay">
+    <div class="panel">
+      <button class="panel-close" onclick="closeSettings()">✕</button>
+      <div class="panel-title">SETTINGS</div>
+      <div class="panel-sub" id="panel-sub">OBSIDIAN EDITION</div>
 
-      <button onclick="closeSettings()" style="position:absolute;top:1rem;right:1rem;background:transparent;border:1px solid rgba(201,168,76,0.2);color:rgba(201,168,76,0.5);font-family:DM Mono,monospace;font-size:10px;padding:4px 10px;cursor:pointer;letter-spacing:0.2em;">✕</button>
-
-      <div style="font-family:Cormorant Garamond,serif;font-size:1.8rem;font-weight:700;color:#c9a84c;letter-spacing:0.15em;margin-bottom:0.2rem;">SETTINGS</div>
-      <div style="font-size:8px;letter-spacing:0.4em;color:rgba(201,168,76,0.3);margin-bottom:2rem;">OBSIDIAN EDITION</div>
-
-      <!-- PLACE TILE -->
-      <div style="margin-bottom:2rem;">
-        <div style="font-size:9px;letter-spacing:0.4em;color:rgba(201,168,76,0.5);margin-bottom:1rem;padding-bottom:0.5rem;border-bottom:1px solid rgba(201,168,76,0.1);">✦ PLACE TILE ANYWHERE</div>
-        <div style="font-size:8px;color:rgba(255,255,255,0.3);letter-spacing:0.12em;margin-bottom:1rem;line-height:1.9;">Pick a value, then click any cell on the mini-grid to place it on the board.</div>
-
-        <div style="margin-bottom:0.8rem;">
-          <div style="font-size:8px;letter-spacing:0.3em;color:rgba(201,168,76,0.4);margin-bottom:0.5rem;">VALUE</div>
-          <div id="value-picker" style="display:flex;flex-wrap:wrap;gap:5px;"></div>
+      <div class="sec">
+        <div class="sec-title">✦ THEME</div>
+        <div class="theme-pick">
+          <button class="theme-opt" data-theme-opt="obsidian" onclick="applyTheme('obsidian')">
+            <span class="swatch obs"><i></i><i></i><i></i></span>OBSIDIAN
+          </button>
+          <button class="theme-opt" data-theme-opt="classic" onclick="applyTheme('classic')">
+            <span class="swatch cls"><i></i><i></i><i></i></span>CLASSIC
+          </button>
         </div>
-        <div style="font-size:8px;letter-spacing:0.3em;color:rgba(201,168,76,0.4);margin-bottom:0.5rem;">CLICK CELL TO PLACE</div>
-        <div id="place-grid" style="display:grid;grid-template-columns:repeat(4,50px);grid-template-rows:repeat(4,50px);gap:5px;"></div>
-        <div id="place-status" style="font-size:8px;letter-spacing:0.2em;color:rgba(201,168,76,0.5);margin-top:0.5rem;min-height:1.2em;"></div>
       </div>
 
-      <!-- TOGGLES -->
-      <div style="margin-bottom:2rem;">
-        <div style="font-size:9px;letter-spacing:0.4em;color:rgba(201,168,76,0.5);margin-bottom:1rem;padding-bottom:0.5rem;border-bottom:1px solid rgba(201,168,76,0.1);">✦ EFFECTS</div>
+      <div class="sec">
+        <div class="sec-title">✦ PLACE TILE ANYWHERE</div>
+        <div class="sec-note">Pick a value, then tap any cell on the mini-grid to place it on the board.</div>
+        <div class="sec-label">VALUE</div>
+        <div id="value-picker" class="value-picker"></div>
+        <div class="sec-label">TAP CELL TO PLACE</div>
+        <div id="place-grid" class="place-grid"></div>
+        <div id="place-status" class="place-status"></div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-title">✦ EFFECTS</div>
         <div style="display:flex;flex-direction:column;gap:12px;" id="toggles-list"></div>
       </div>
 
-      <!-- REMAP KEYS -->
-      <div style="margin-bottom:2rem;">
-        <div style="font-size:9px;letter-spacing:0.4em;color:rgba(201,168,76,0.5);margin-bottom:1rem;padding-bottom:0.5rem;border-bottom:1px solid rgba(201,168,76,0.1);">✦ REMAP KEYS</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;" id="key-boxes"></div>
-        <div style="font-size:7px;letter-spacing:0.2em;color:rgba(201,168,76,0.3);margin-top:0.6rem;">Click a box then press any key to reassign</div>
+      <div class="sec">
+        <div class="sec-title">✦ REMAP KEYS</div>
+        <div class="key-grid" id="key-boxes"></div>
+        <div class="sec-note" style="margin-top:0.6rem;margin-bottom:0;">Click a box then press any key to reassign</div>
       </div>
 
-      <!-- DANGER -->
       <div>
-        <div style="font-size:9px;letter-spacing:0.4em;color:rgba(255,50,50,0.4);margin-bottom:1rem;padding-bottom:0.5rem;border-bottom:1px solid rgba(255,50,50,0.1);">✦ DANGER ZONE</div>
+        <div class="sec-title danger">✦ DANGER ZONE</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button class="btn" onclick="clearBest()" style="border-color:rgba(255,50,50,0.3);color:rgba(255,80,80,0.6);font-size:8px;">✕ RESET BEST</button>
-          <button class="btn" onclick="newGame();closeSettings();" style="border-color:rgba(255,50,50,0.3);color:rgba(255,80,80,0.6);font-size:8px;">✕ RESTART</button>
+          <button class="btn danger" onclick="clearBest()">✕ RESET BEST</button>
+          <button class="btn danger" onclick="newGame();closeSettings();">✕ RESTART</button>
         </div>
       </div>
-
     </div>
   </div>
 
@@ -635,7 +885,7 @@ header {
   </div>
 
   <div id="howto">↑ ↓ ← → OR WASD OR SWIPE &nbsp;·&nbsp; JOIN TILES TO REACH&nbsp;<span style="color:var(--gold)">2048</span></div>
-  <div style="position:fixed;bottom:calc(1rem + env(safe-area-inset-bottom));right:1.2rem;font-family:'DM Mono',monospace;font-size:8px;letter-spacing:0.35em;color:rgba(201,168,76,0.18);pointer-events:none;z-index:5;user-select:none;">harelz</div>
+  <button id="sig" type="button" onclick="crownSig()" aria-label="Harelz">Harelz</button>
 </div>
 
 <div id="milestone"></div>
@@ -647,12 +897,14 @@ header {
 // ════════════════════════════════════════
 
 const SIZE = 4;
+const SLIDE_MS = 100;   // tile slide duration — matches the original game
 
 const settings = {
   particles:  true,
   combos:     true,
   milestones: true,
   animations: true,
+  theme:      'obsidian',
 };
 
 // Key mapping: direction -> key code string
@@ -663,9 +915,8 @@ let keyMap = {
   right: 'ArrowRight',
 };
 
-// Save/load settings
 function saveSettings() {
-  localStorage.setItem('2048-obs-settings', JSON.stringify({settings, keyMap}));
+  try { localStorage.setItem('2048-obs-settings', JSON.stringify({settings, keyMap})); } catch(e){}
 }
 function loadSettings() {
   try {
@@ -675,16 +926,24 @@ function loadSettings() {
   } catch(e){}
 }
 loadSettings();
-const GAP  = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--gap')) || 10;
-const TILE_SIZE = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--tile-size')) || 110;
 
 // ── STATE ──
+// grid[r][c] = { id, value, row, col, el, inner }
 let grid = [], score = 0, best = 0, moves = 0;
-let history = []; // for undo
+let history = [];
 let combo = 0, comboTimer = null;
-let animating = false;
 let tileId = 0;
 let winShown = false;
+let fx = null;          // effects waiting for the current slide to finish
+let overTimer = null;
+
+// Board geometry, read from CSS once (and again on resize) instead of on every tile
+let TS = 110, GAP = 10;
+function measure() {
+  const cs = getComputedStyle(document.documentElement);
+  TS  = parseFloat(cs.getPropertyValue('--tile-size')) || 110;
+  GAP = parseFloat(cs.getPropertyValue('--gap')) || 10;
+}
 
 // ── DOM ──
 const tileLayer   = document.getElementById('tile-layer');
@@ -697,274 +956,289 @@ const comboEl     = document.getElementById('combo-display');
 const milestoneEl = document.getElementById('milestone');
 const recentEl    = document.getElementById('recent-merges');
 const bestBadge   = document.getElementById('best-badge');
+const scoreBox    = document.getElementById('score-box');
 const pCanvas     = document.getElementById('particles-canvas');
 const pCtx        = pCanvas.getContext('2d');
 
-// Load best
-best = parseInt(localStorage.getItem('2048-obsidian-best') || '0');
+try { best = parseInt(localStorage.getItem('2048-obsidian-best') || '0') || 0; } catch(e){}
 bestEl.textContent = fmt(best);
 
-// ── GRID INIT ──
+const isClassic = () => settings.theme === 'classic';
+
+// ── GRID ──
 function makeGrid() {
   return Array.from({length:SIZE}, () => Array(SIZE).fill(null));
 }
-
-function newGame() {
-  // Hide intro screen
-  const intro = document.getElementById('intro-screen');
-  if(intro) { intro.style.animation='intro-exit 0.5s ease forwards'; setTimeout(()=>intro.style.display='none',500); }
-  grid = makeGrid();
-  score = 0; moves = 0; combo = 0; winShown = false;
-  history = [];
-  tileLayer.innerHTML = '';
-  recentEl.innerHTML = '';
-  boardWrap.className = '';
-  updateScore(0);
-  movesEl.textContent = '0';
-  addTile(); addTile();
-  renderTiles();
-  hideOverlay();
+function eachTile(fn) {
+  for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++) if(grid[r][c]) fn(grid[r][c]);
 }
-
-// ── TILE OBJECTS ──
-// Each cell: { id, value, el, row, col, merged, isNew }
 
 function addTile() {
   const empties = [];
   for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++) if(!grid[r][c]) empties.push({r,c});
-  if(!empties.length) return false;
+  if(!empties.length) return null;
   const {r,c} = empties[Math.floor(Math.random()*empties.length)];
-  const val = Math.random() < 0.9 ? 2 : 4;
-  grid[r][c] = { id: ++tileId, value: val, row: r, col: c, isNew: true, merged: false };
-  return true;
+  const t = { id: ++tileId, value: Math.random() < 0.9 ? 2 : 4, row: r, col: c };
+  grid[r][c] = t;
+  return t;
+}
+
+function newGame() {
+  const intro = document.getElementById('intro-screen');
+  if(intro && intro.style.display !== 'none') {
+    intro.style.animation = 'intro-exit 0.5s ease forwards';
+    setTimeout(() => intro.style.display = 'none', 500);
+  }
+  clearTimeout(overTimer);
+  flushFx();
+  grid = makeGrid();
+  score = 0; moves = 0; combo = 0; winShown = false;
+  shownMilestones.clear();
+  history = [];
+  recentEl.innerHTML = '';
+  hideCombo();
+  addTile(); addTile();
+  rebuild(true);
+  updateScore(0);
+  movesEl.textContent = '0';
+  hideOverlay();
 }
 
 // ── RENDER ──
-function tilePos(r, c) {
-  const ts = getTileSize(), g = getGap();
-  return { left: g + c*(ts+g), top: g + r*(ts+g) };
+function xy(r, c) {
+  return `translate3d(${GAP + c*(TS+GAP)}px,${GAP + r*(TS+GAP)}px,0)`;
 }
-
-function getTileSize() { return parseInt(getComputedStyle(document.documentElement).getPropertyValue('--tile-size')) || 110; }
-function getGap()      { return parseInt(getComputedStyle(document.documentElement).getPropertyValue('--gap')) || 10; }
+function center(t) {
+  return { x: GAP + t.col*(TS+GAP) + TS/2, y: GAP + t.row*(TS+GAP) + TS/2 };
+}
 
 function tileClass(val) {
-  if(val === 2)    return 't2';
-  if(val === 4)    return 't4';
-  if(val === 8)    return 't8';
-  if(val === 16)   return 't16';
-  if(val === 32)   return 't32';
-  if(val === 64)   return 't64';
-  if(val === 128)  return 't128';
-  if(val === 256)  return 't256';
-  if(val === 512)  return 't512';
-  if(val === 1024) return 't1024';
-  if(val === 2048) return 't2048';
-  return 'tHigh';
+  return val <= 2048 ? 't' + val : 'tHigh';
 }
 
-function tileFontSize(val) {
-  if(val < 100)   return '2.2rem';
-  if(val < 1000)  return '1.9rem';
-  if(val < 10000) return '1.5rem';
-  return '1.1rem';
+function paint(t) {
+  const label = fmt(t.value);
+  t.inner.className = `tile-inner ${tileClass(t.value)} d${Math.min(label.length, 5)}`;
+  t.inner.textContent = label;
 }
 
-function createTileEl(tile) {
-  const {left, top} = tilePos(tile.row, tile.col);
+function makeEl(t, appear) {
   const el = document.createElement('div');
-  el.className = `tile ${tileClass(tile.value)}${(tile.isNew&&settings.animations)?' new':''}${(tile.merged&&settings.animations)?' merged':''}`;
-  el.style.cssText = `left:${left}px;top:${top}px;width:${getTileSize()}px;height:${getTileSize()}px;font-size:${tileFontSize(tile.value)}`;
-  el.textContent = fmt(tile.value);
-  el.dataset.id = tile.id;
-  tile.el = el;
+  el.className = 'tile';
+  const inner = document.createElement('div');
+  el.appendChild(inner);
+  t.el = el; t.inner = inner;
+  paint(t);
+  el.style.transform = xy(t.row, t.col);
   tileLayer.appendChild(el);
+  if(appear && settings.animations) {
+    inner.animate(
+      [{transform:'scale(0)', opacity:0}, {transform:'scale(1)', opacity:1}],
+      {duration:180, easing:'cubic-bezier(0.3,1.45,0.55,1)'}
+    );
+  }
 }
 
-function renderTiles() {
-  // Remove old elements for cells that no longer exist
-  const existingIds = new Set();
-  for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++) {
-    const t = grid[r][c];
-    if(t) existingIds.add(t.id);
-  }
-  // Remove stale
-  [...tileLayer.querySelectorAll('.tile')].forEach(el => {
-    if(!existingIds.has(+el.dataset.id)) {
-      // Keep merged ghost briefly
-      el.style.transition = 'opacity 0.08s';
-      el.style.opacity = '0';
-      setTimeout(() => el.remove(), 100);
-    }
-  });
+// Recreate every tile element from the grid (new game, undo, theme change)
+function rebuild(appear) {
+  flushFx();
+  tileLayer.innerHTML = '';
+  eachTile(t => makeEl(t, appear));
+}
 
-  for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++) {
-    const t = grid[r][c];
-    if(!t) continue;
-    const {left, top} = tilePos(r, c);
-
-    if(!t.el || !document.contains(t.el)) {
-      createTileEl(t);
-    } else {
-      // Move existing
-      t.el.style.left = left + 'px';
-      t.el.style.top  = top  + 'px';
-      if(t.merged) {
-        t.el.className = `tile ${tileClass(t.value)} merged`;
-        t.el.style.cssText = `left:${left}px;top:${top}px;width:${getTileSize()}px;height:${getTileSize()}px;font-size:${tileFontSize(t.value)}`;
-        t.el.textContent = fmt(t.value);
-      }
-      if(t.isNew) {
-        t.el.className = `tile ${tileClass(t.value)} new`;
-      }
-    }
-    t.isNew = false;
-    t.merged = false;
-  }
+// Snap tiles to new geometry without sliding (after a resize)
+function reposition() {
+  tileLayer.classList.add('no-anim');
+  eachTile(t => { if(t.el) t.el.style.transform = xy(t.row, t.col); });
+  void tileLayer.offsetWidth;
+  tileLayer.classList.remove('no-anim');
 }
 
 // ── MOVE LOGIC ──
-function cloneGrid() {
-  return grid.map(row => row.map(t => t ? {...t, el: null} : null));
+// Cell k (0 = leading edge) of line i, for a slide in direction dir
+function lineCell(dir, i, k) {
+  switch(dir) {
+    case 'left':  return [i, k];
+    case 'right': return [i, SIZE-1-k];
+    case 'up':    return [k, i];
+    default:      return [SIZE-1-k, i];   // down
+  }
+}
+
+function snapshot() {
+  return {
+    cells: grid.map(row => row.map(t => t ? {id:t.id, value:t.value} : null)),
+    score, moves,
+  };
 }
 
 function slide(dir) {
-  if(animating) return;
-  const prev = cloneGrid();
-  const prevScore = score;
+  if(document.getElementById('overlay')) return;
 
+  // A new move finishes the previous one's effects instantly, so input is never ignored
+  const hadFx = flushFx();
+  if(hadFx) void tileLayer.offsetWidth;   // let freshly spawned tiles register before they slide
+
+  const prev = snapshot();
+  const next = makeGrid();
+  const consumed = [];
   let moved = false;
-  let mergeCount = 0;
-  const mergedValues = [];
 
-  const rotate = (g) => {
-    const n = g.length;
-    return Array.from({length:n}, (_,r) => Array.from({length:n}, (_,c) => g[n-1-c][r]));
-  };
-
-  // Normalize: always slide LEFT
-  let g = grid;
-  const rots = {right:2, up:3, down:1, left:0};
-  let r = rots[dir] || 0;
-  for(let i=0;i<r;i++) g = rotate(g);
-
-  // Slide each row left
-  for(let row=0;row<SIZE;row++) {
-    let tiles = g[row].filter(Boolean);
-    // Merge
-    for(let i=0;i<tiles.length-1;i++) {
-      if(tiles[i].value === tiles[i+1].value) {
-        const newVal = tiles[i].value * 2;
-        tiles[i] = { ...tiles[i], value: newVal, merged: true };
-        tiles.splice(i+1,1);
-        score += newVal;
-        mergeCount++;
-        mergedValues.push(newVal);
+  for(let i=0;i<SIZE;i++) {
+    const cells = [];
+    for(let k=0;k<SIZE;k++) cells.push(lineCell(dir, i, k));
+    const out = [];
+    for(const [r,c] of cells) {
+      const t = grid[r][c];
+      if(!t) continue;
+      const last = out[out.length-1];
+      if(last && !last._m && last.value === t.value) {
+        last._m = true;
+        consumed.push({t, into:last});
         moved = true;
+      } else {
+        out.push(t);
       }
     }
-    // Pad
-    while(tiles.length < SIZE) tiles.push(null);
-    g[row] = tiles;
-  }
-
-  // Rotate back
-  for(let i=0;i<(4-r)%4;i++) g = rotate(g);
-
-  // Check if anything moved
-  for(let row=0;row<SIZE;row++) for(let col=0;col<SIZE;col++) {
-    const a = prev[row][col], b = g[row][col];
-    if(!a&&b || a&&!b || (a&&b&&a.id!==b.id)) { moved=true; break; }
+    out.forEach((t, k) => {
+      const [r,c] = cells[k];
+      if(t.row !== r || t.col !== c) moved = true;
+      t.row = r; t.col = c;
+      next[r][c] = t;
+    });
   }
 
   if(!moved) { shakeBoard(); return; }
 
-  // Save history
-  history.push({grid: prev, score: prevScore, moves});
+  history.push(prev);
+  if(history.length > 200) history.shift();
 
-  // Update positions
-  for(let row=0;row<SIZE;row++) for(let col=0;col<SIZE;col++) {
-    const t = g[row][col];
-    if(t) { t.row=row; t.col=col; }
-  }
-  grid = g;
+  let gained = 0;
+  const merged = [];
+  consumed.forEach(({t, into}) => {
+    into.value *= 2;
+    into._m = false;
+    gained += into.value;
+    merged.push(into);
+    t.row = into.row; t.col = into.col;
+  });
 
+  grid = next;
+  score += gained;
   moves++;
-  movesEl.textContent = moves;
-  updateScore(score - prevScore);
+  const spawned = addTile();
 
-  // Combos
-  if(mergeCount > 0) {
+  // Slide: every tile, including the ones being absorbed, glides to its target
+  eachTile(t => { if(t.el) t.el.style.transform = xy(t.row, t.col); });   // the spawned tile gets its element later
+  consumed.forEach(({t}) => {
+    t.el.classList.add('consumed');
+    t.el.style.transform = xy(t.row, t.col);
+  });
+  fx = { consumed, merged, spawned, timer: setTimeout(flushFx, SLIDE_MS) };
+
+  movesEl.textContent = moves;
+  updateScore(gained);
+
+  if(merged.length) {
     combo++;
     clearTimeout(comboTimer);
-    comboTimer = setTimeout(()=>{ combo=0; hideCombo(); }, 1800);
+    comboTimer = setTimeout(() => { combo = 0; hideCombo(); }, 1800);
     if(combo >= 2 && settings.combos) showCombo(combo);
-
-    // Milestone checks
-    mergedValues.forEach(v => checkMilestone(v));
-
-    // Particles!
-    animating = true;
-    setTimeout(() => {
-      renderTiles();
-      addTile();
-      renderTiles();
-      // Spawn particles for each merge
-      if(settings.particles) mergedValues.forEach(v => {
-        const pos = findMergedTile(v);
-        if(pos) spawnMergeParticles(pos.left + getTileSize()/2, pos.top + getTileSize()/2, v);
-      });
-      animating = false;
-      checkGameOver();
-    }, 140);
+    merged.forEach(t => checkMilestone(t.value));
   } else {
     combo = 0; hideCombo();
-    renderTiles();
-    addTile();
-    renderTiles();
-    checkGameOver();
   }
+
+  checkGameOver();
 }
 
-function findMergedTile(val) {
-  for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++) {
-    if(grid[r][c]?.value === val) return tilePos(r,c);
+// Run the end-of-slide effects: absorbed tiles vanish, merged tiles pop, the new tile appears.
+// Returns true when there was something to finish.
+function flushFx() {
+  if(!fx) return false;
+  const f = fx; fx = null;
+  clearTimeout(f.timer);
+
+  f.consumed.forEach(({t}) => t.el.remove());
+
+  let biggest = 0;
+  f.merged.forEach(t => {
+    paint(t);
+    if(settings.animations) mergeFx(t);
+    if(settings.particles) { const p = center(t); spawnMergeParticles(p.x, p.y, t.value); }
+    biggest = Math.max(biggest, t.value);
+  });
+  // Big merges give the whole board a small thump
+  if(biggest >= 128 && settings.animations) {
+    const k = biggest >= 1024 ? 1.025 : 1.012;
+    boardWrap.animate(
+      [{transform:'scale(1)'}, {transform:`scale(${k})`}, {transform:'scale(1)'}],
+      {duration:200, easing:'ease-out'}
+    );
   }
-  return null;
+
+  if(f.spawned) makeEl(f.spawned, true);
+  return true;
+}
+
+// Merge look: squash-and-stretch pop, a white flash, and a coloured ring that expands outward
+function mergeFx(t) {
+  t.inner.animate([
+    {transform:'scale(1)'},
+    {transform:'scale(1.24)', offset:0.35},
+    {transform:'scale(0.94)', offset:0.7},
+    {transform:'scale(1)'}
+  ], {duration:260, easing:'ease-out'});
+
+  const flash = document.createElement('div');
+  flash.className = 'fx-flash';
+  t.el.appendChild(flash);
+  flash.animate([{opacity:isClassic() ? 0.45 : 0.6}, {opacity:0}], {duration:280, easing:'ease-out'})
+    .onfinish = () => flash.remove();
+
+  const col = ringColor(t.value);
+  const ring = document.createElement('div');
+  ring.className = 'fx-ring';
+  ring.style.borderColor = col;
+  if(!isClassic()) ring.style.boxShadow = `0 0 14px ${col}, inset 0 0 10px ${col}`;
+  t.el.appendChild(ring);
+  ring.animate([
+    {transform:'scale(1)', opacity:0.95},
+    {transform:'scale(1.42)', opacity:0}
+  ], {duration:440, easing:'cubic-bezier(0.2,0.7,0.3,1)'})
+    .onfinish = () => ring.remove();
 }
 
 // ── SCORE ──
 function updateScore(delta) {
   scoreEl.textContent = fmt(score);
   if(delta > 0) {
-    // Delta pop
     const dEl = document.createElement('div');
     dEl.className = 'score-delta';
     dEl.textContent = '+' + fmt(delta);
-    document.getElementById('score-box').appendChild(dEl);
-    setTimeout(() => dEl.remove(), 1000);
-    // Bump
-    document.getElementById('score-box').classList.add('bump');
-    setTimeout(() => document.getElementById('score-box').classList.remove('bump'), 300);
+    scoreBox.appendChild(dEl);
+    setTimeout(() => dEl.remove(), 800);
+    scoreEl.animate(
+      [{transform:'scale(1)'}, {transform:'scale(1.22)', offset:0.4}, {transform:'scale(1)'}],
+      {duration:260, easing:'ease-out'}
+    );
   }
   if(score > best) {
     best = score;
     bestEl.textContent = fmt(best);
-    localStorage.setItem('2048-obsidian-best', best);
+    try { localStorage.setItem('2048-obsidian-best', best); } catch(e){}
     bestBadge.classList.add('show');
-    setTimeout(() => bestBadge.classList.remove('show'), 2000);
+    clearTimeout(bestBadge._t);
+    bestBadge._t = setTimeout(() => bestBadge.classList.remove('show'), 2000);
   }
-  // Board glow
   const maxVal = getMaxVal();
-  if(maxVal >= 4096)     boardWrap.className = 'glow-high';
-  else if(maxVal >= 2048) boardWrap.className = 'glow-2048';
-  else if(maxVal >= 1024) boardWrap.className = 'glow-gold';
-  else boardWrap.className = '';
+  const glow = maxVal >= 4096 ? 'glow-high' : maxVal >= 2048 ? 'glow-2048' : maxVal >= 1024 ? 'glow-gold' : '';
+  if(boardWrap.className !== glow) boardWrap.className = glow;
 }
 
 function getMaxVal() {
-  let m=0;
-  for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++) if(grid[r][c]) m=Math.max(m,grid[r][c].value);
+  let m = 0;
+  eachTile(t => { m = Math.max(m, t.value); });
   return m;
 }
 
@@ -980,12 +1254,11 @@ function showCombo(n) {
   comboEl.style.textShadow = `0 0 20px ${col}`;
   comboEl.classList.add('visible');
 
-  // Streak bar
   streakEl.textContent = `✦ ${n}x COMBO ✦`;
   streakEl.style.color = col;
+  streakEl.style.textShadow = `0 0 20px ${col}`;
   streakEl.classList.add('show');
 
-  // Recent merge log
   const entry = document.createElement('div');
   entry.className = 'merge-entry';
   entry.textContent = `${n}× COMBO`;
@@ -1011,33 +1284,38 @@ const MILESTONES = {
 const shownMilestones = new Set();
 
 function checkMilestone(val) {
-  if(MILESTONES[val] && !shownMilestones.has(val)) {
-    shownMilestones.add(val);
-    const m = MILESTONES[val];
-    milestoneEl.textContent = m.text;
-    milestoneEl.style.color = m.color;
-    milestoneEl.style.textShadow = `0 0 60px ${m.shadow}, 0 0 120px ${m.shadow}`;
-    if(settings.milestones) milestoneEl.classList.add('milestone-anim');
-    setTimeout(() => milestoneEl.classList.remove('milestone-anim'), 1400);
-
-    // Win condition
-    if(val === 2048 && !winShown) { winShown=true; setTimeout(showWin, 1600); }
-
-    // Log
-    const entry = document.createElement('div');
-    entry.className = 'merge-entry';
-    entry.style.color = m.color;
-    entry.style.borderColor = m.color;
-    entry.textContent = `${fmt(val)} REACHED`;
-    recentEl.insertBefore(entry, recentEl.firstChild);
-    setTimeout(() => entry.remove(), 4000);
+  if(!MILESTONES[val] || shownMilestones.has(val)) return;
+  shownMilestones.add(val);
+  const m = MILESTONES[val];
+  milestoneEl.textContent = m.text;
+  milestoneEl.style.color = m.color;
+  milestoneEl.style.textShadow = `0 0 60px ${m.shadow}, 0 0 120px ${m.shadow}`;
+  if(settings.milestones) {
+    milestoneEl.classList.remove('milestone-anim');
+    void milestoneEl.offsetWidth;
+    milestoneEl.classList.add('milestone-anim');
   }
+
+  if(val === 2048 && !winShown) { winShown = true; setTimeout(showWin, 1600); }
+
+  const entry = document.createElement('div');
+  entry.className = 'merge-entry';
+  entry.style.color = m.color;
+  entry.style.borderColor = m.color;
+  entry.textContent = `${fmt(val)} REACHED`;
+  recentEl.insertBefore(entry, recentEl.firstChild);
+  setTimeout(() => entry.remove(), 4000);
 }
 
 // ── PARTICLES ──
-let particles = [];
+const CLASSIC_COLORS = {2:'#eee4da',4:'#ede0c8',8:'#f2b179',16:'#f59563',32:'#f67c5f',64:'#f65e3b',
+  128:'#edcf72',256:'#edcc61',512:'#edc850',1024:'#edc53f',2048:'#edc22e'};
 
 function particleColor(val) {
+  if(isClassic()) {
+    const c = CLASSIC_COLORS[val] || '#3c3a32';
+    return [c, c, '#bbada0'];
+  }
   if(val >= 2048) return ['#fff','#ffe','#ffd'];
   if(val >= 1024) return ['#ffe838','#ffcc00','#ff9900'];
   if(val >= 512)  return ['#44ffaa','#00cc77','#88ffcc'];
@@ -1049,39 +1327,44 @@ function particleColor(val) {
   if(val >= 8)    return ['#ffaa55','#cc6600','#ffcc88'];
   return ['#f0c96a','#c9a84c','#ffe8a0'];
 }
+function ringColor(val) {
+  return isClassic() ? (CLASSIC_COLORS[val] || '#3c3a32') : particleColor(val)[0];
+}
+
+let particles = [];
+let particlesRunning = false;
+let pW = 0, pH = 0;
+const CANVAS_PAD = 60;   // the canvas overhangs the board by this much on every side
 
 function spawnMergeParticles(cx, cy, val) {
   const colors = particleColor(val);
-  const count = Math.min(8 + Math.log2(val) * 2, 30);
-  // Offset by canvas position
-  const rect = pCanvas.getBoundingClientRect();
-  const bRect = boardWrap.getBoundingClientRect();
-  const ox = bRect.left - rect.left + cx;
-  const oy = bRect.top  - rect.top  + cy;
+  const lv = Math.log2(val);
+  const count = Math.min(10 + lv * 2, 30);
+  const ox = cx + CANVAS_PAD, oy = cy + CANVAS_PAD;
 
   for(let i=0;i<count;i++) {
     const angle = rnd(0, Math.PI*2);
-    const speed = rnd(1.5, 5 + Math.log2(val)*0.4);
-    const col = colors[Math.floor(Math.random()*colors.length)];
+    const speed = rnd(1.8, 5.5 + lv*0.4);
     particles.push({
-      x:ox, y:oy,
+      x:ox, y:oy, px:ox, py:oy,
       vx: Math.cos(angle)*speed,
       vy: Math.sin(angle)*speed,
-      life:1, decay: rnd(0.015,0.04),
-      size: rnd(2, 4+Math.log2(val)*0.3),
-      color:col,
-      trail:[],
+      life:1, decay: rnd(0.022,0.045),
+      size: rnd(1.6, 3.2 + lv*0.25),
+      color: colors[Math.floor(Math.random()*colors.length)],
     });
   }
-  // Shockwave ring
-  particles.push({ ring:true, x:ox, y:oy, r:0, maxR: 60+val*0.02, life:1, color:colors[0], decay:0.04 });
+  particles.push({ ring:true, x:ox, y:oy, r:TS*0.35, maxR: TS*0.9 + lv*4, life:1, color:colors[0], decay:0.05 });
+  if(!particlesRunning) { particlesRunning = true; requestAnimationFrame(particleLoop); }
 }
 
 function rnd(a,b) { return Math.random()*(b-a)+a; }
 
+// Runs only while particles are alive; glow comes from additive blending, not shadowBlur
 function particleLoop() {
-  const W = pCanvas.width, H = pCanvas.height;
-  pCtx.clearRect(0,0,W,H);
+  pCtx.clearRect(0,0,pW,pH);
+  pCtx.globalCompositeOperation = isClassic() ? 'source-over' : 'lighter';
+  pCtx.lineCap = 'round';
 
   for(let i=particles.length-1;i>=0;i--) {
     const p = particles[i];
@@ -1089,77 +1372,56 @@ function particleLoop() {
     if(p.life <= 0) { particles.splice(i,1); continue; }
 
     if(p.ring) {
-      p.r += (p.maxR - p.r) * 0.15;
+      p.r += (p.maxR - p.r) * 0.18;
       pCtx.beginPath();
       pCtx.arc(p.x, p.y, p.r, 0, Math.PI*2);
       pCtx.strokeStyle = p.color;
-      pCtx.globalAlpha = p.life * 0.5;
-      pCtx.lineWidth = 1.5;
+      pCtx.globalAlpha = p.life * 0.55;
+      pCtx.lineWidth = 2 * p.life + 0.5;
       pCtx.stroke();
-      pCtx.globalAlpha = 1;
       continue;
     }
 
-    p.trail.push({x:p.x,y:p.y});
-    if(p.trail.length > 5) p.trail.shift();
-
-    p.vx *= 0.93; p.vy *= 0.93; p.vy += 0.05;
+    p.px = p.x; p.py = p.y;
+    p.vx *= 0.92; p.vy *= 0.92; p.vy += 0.06;
     p.x += p.vx; p.y += p.vy;
 
-    // Trail
-    for(let t=0;t<p.trail.length-1;t++) {
-      const a = (t/p.trail.length)*p.life*0.4;
-      pCtx.beginPath();
-      pCtx.moveTo(p.trail[t].x, p.trail[t].y);
-      pCtx.lineTo(p.trail[t+1].x, p.trail[t+1].y);
-      pCtx.strokeStyle = p.color;
-      pCtx.globalAlpha = a;
-      pCtx.lineWidth = p.size * (t/p.trail.length) * 0.6;
-      pCtx.stroke();
-    }
-    pCtx.globalAlpha = 1;
-
-    // Core
-    pCtx.beginPath();
-    pCtx.arc(p.x, p.y, p.size * p.life, 0, Math.PI*2);
-    pCtx.fillStyle = p.color;
+    // Streak from the previous position gives a motion trail in one stroke
     pCtx.globalAlpha = p.life;
-    pCtx.shadowColor = p.color;
-    pCtx.shadowBlur = p.size * 3;
-    pCtx.fill();
-    pCtx.globalAlpha = 1;
-    pCtx.shadowBlur = 0;
+    pCtx.strokeStyle = p.color;
+    pCtx.lineWidth = p.size * (0.4 + p.life);
+    pCtx.beginPath();
+    pCtx.moveTo(p.px - p.vx*1.5, p.py - p.vy*1.5);
+    pCtx.lineTo(p.x, p.y);
+    pCtx.stroke();
   }
+  pCtx.globalAlpha = 1;
 
-  requestAnimationFrame(particleLoop);
+  if(particles.length) requestAnimationFrame(particleLoop);
+  else { pCtx.clearRect(0,0,pW,pH); particlesRunning = false; }
 }
 
 function resizeParticleCanvas() {
-  const rect = pCanvas.getBoundingClientRect();
-  pCanvas.width  = rect.width;
-  pCanvas.height = rect.height;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  pW = boardWrap.offsetWidth + CANVAS_PAD*2;
+  pH = boardWrap.offsetHeight + CANVAS_PAD*2;
+  pCanvas.width  = Math.round(pW * dpr);
+  pCanvas.height = Math.round(pH * dpr);
+  pCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
 // ── UNDO ──
 function undoMove() {
-  if(!history.length || animating) return;
+  if(!history.length) return;
+  clearTimeout(overTimer);
+  flushFx();
   const prev = history.pop();
-  // Re-attach elements
-  grid = prev.grid.map(row => row.map(t => {
-    if(!t) return null;
-    // Find existing el by id
-    const el = tileLayer.querySelector(`[data-id="${t.id}"]`);
-    return {...t, el: el || null, isNew:false, merged:false};
-  }));
+  grid = prev.cells.map((row, r) => row.map((t, c) => t ? {id:t.id, value:t.value, row:r, col:c} : null));
   score = prev.score;
   moves = prev.moves;
+  rebuild(false);
   updateScore(0);
   movesEl.textContent = moves;
-  renderTiles();
-  // Remove extra tiles (ones added after the move)
-  const currentIds = new Set();
-  for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++) if(grid[r][c]) currentIds.add(grid[r][c].id);
-  [...tileLayer.querySelectorAll('.tile')].forEach(el => { if(!currentIds.has(+el.dataset.id)) el.remove(); });
   hideOverlay();
 }
 
@@ -1167,29 +1429,34 @@ function undoMove() {
 function checkGameOver() {
   for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++) {
     if(!grid[r][c]) return;
-    if(c<SIZE-1 && grid[r][c]?.value === grid[r][c+1]?.value) return;
-    if(r<SIZE-1 && grid[r][c]?.value === grid[r+1]?.[c]?.value) return;
+    if(c<SIZE-1 && grid[r][c].value === grid[r][c+1]?.value) return;
+    if(r<SIZE-1 && grid[r][c].value === grid[r+1][c]?.value) return;
   }
-  setTimeout(showGameOver, 400);
+  clearTimeout(overTimer);
+  overTimer = setTimeout(showGameOver, 500);
 }
 
 function showGameOver() {
   const o = makeOverlay('gameover');
   o.innerHTML = `
-    <div class="overlay-title" style="color:#ff4444;text-shadow:0 0 30px #ff0000">GAME OVER</div>
+    <div class="overlay-title over">GAME OVER</div>
     <div class="overlay-score">Score: ${fmt(score)}</div>
     <div class="overlay-sub">BEST: ${fmt(best)}</div>
-    <button class="btn" onclick="newGame()" style="margin-top:1rem">↺ TRY AGAIN</button>
+    <div class="overlay-row">
+      <button class="btn" onclick="undoMove()">↩ UNDO</button>
+      <button class="btn" onclick="newGame()">↺ TRY AGAIN</button>
+    </div>
   `;
 }
 
 function showWin() {
+  if(getMaxVal() < 2048) return;   // undone before the banner appeared
   const o = makeOverlay('win');
   o.innerHTML = `
-    <div class="overlay-title" style="color:var(--gold-bright);text-shadow:0 0 40px rgba(240,201,106,0.8)">YOU WIN</div>
+    <div class="overlay-title win">YOU WIN</div>
     <div class="overlay-score" style="font-size:1.1rem;margin:0.2rem 0">2048 REACHED</div>
     <div class="overlay-sub">KEEP GOING?</div>
-    <div style="display:flex;gap:8px;margin-top:1rem">
+    <div class="overlay-row">
       <button class="btn" onclick="hideOverlay()">CONTINUE ↗</button>
       <button class="btn" onclick="newGame()">↺ NEW GAME</button>
     </div>
@@ -1210,10 +1477,10 @@ function hideOverlay() {
 
 // ── SHAKE ──
 function shakeBoard() {
-  boardWrap.style.animation = 'none';
-  boardWrap.offsetHeight; // reflow
-  boardWrap.style.animation = 'shake 0.3s ease';
-  setTimeout(()=>boardWrap.style.animation='',300);
+  boardWrap.animate([
+    {transform:'translateX(0)'}, {transform:'translateX(-5px)'}, {transform:'translateX(5px)'},
+    {transform:'translateX(-3px)'}, {transform:'translateX(3px)'}, {transform:'translateX(0)'}
+  ], {duration:280, easing:'ease-out'});
 }
 
 // ── BACKGROUND GRID ──
@@ -1234,86 +1501,109 @@ function fmt(n) {
   return n.toString();
 }
 
-// ── INPUT ──
-// Keyboard
-document.addEventListener('keydown', e => {
-  const map = {ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right',
-                KeyW:'up',KeyS:'down',KeyA:'left',KeyD:'right'};
-  // Skip keys the remappable handler below already moved on, so one press is one move
-  if(e.defaultPrevented || settingsOpen()) return;
-  if(map[e.code]) { e.preventDefault(); slide(map[e.code]); }
-});
+// ── SIGNATURE: tap turns it into a crown for a second ──
+let sigTimer = null;
+function crownSig() {
+  const sig = document.getElementById('sig');
+  clearTimeout(sigTimer);
+  sig.innerHTML = '<span class="crown">👑</span>';
+  sig.firstChild.animate([
+    {transform:'scale(0.2) rotate(-25deg)', opacity:0},
+    {transform:'scale(1.35) rotate(8deg)', opacity:1, offset:0.6},
+    {transform:'scale(1) rotate(0deg)', opacity:1}
+  ], {duration:320, easing:'ease-out'});
+  sigTimer = setTimeout(() => {
+    sig.textContent = 'Harelz';
+    sig.animate([{opacity:0}, {opacity:1}], {duration:250});
+  }, 1000);
+}
 
-// Touch/Swipe
-// Swipes are ignored while the intro or settings screen is open, so they don't move the hidden board.
-function settingsOpen() { return document.getElementById('settings-overlay')?.style.display === 'flex'; }
+// ── INPUT ──
+function settingsOpen() { return document.getElementById('settings-overlay').style.display === 'flex'; }
 function introOpen()    { const i = document.getElementById('intro-screen'); return !!i && i.style.display !== 'none'; }
 
-let touchStart = null;
+// Keyboard: remapped keys first, WASD as a fallback — one press, one move
+const WASD = {KeyW:'up', KeyS:'down', KeyA:'left', KeyD:'right'};
+document.addEventListener('keydown', e => {
+  if(listeningDir || settingsOpen()) return;
+  const dir = Object.keys(keyMap).find(d => keyMap[d] === e.code) || WASD[e.code];
+  if(dir) { e.preventDefault(); slide(dir); }
+});
+
+// Touch: the move fires as soon as the finger has travelled far enough — no waiting for lift-off
+const SWIPE_TRIGGER = 22;   // px during the drag
+const SWIPE_FLICK   = 12;   // px for a quick flick that ends before the trigger
+let touch = null;
+
+function swipeDir(dx, dy) {
+  return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+}
 document.addEventListener('touchstart', e => {
-  if(settingsOpen() || introOpen()) { touchStart = null; return; }
-  touchStart = {x:e.touches[0].clientX, y:e.touches[0].clientY};
+  if(settingsOpen() || introOpen() || e.touches.length > 1) { touch = null; return; }
+  touch = { x:e.touches[0].clientX, y:e.touches[0].clientY, done:false };
 }, {passive:true});
 // Stop iOS from scrolling / bouncing the page while swiping; the settings panel can still scroll.
 document.addEventListener('touchmove', e => {
   if(!settingsOpen()) e.preventDefault();
+  if(!touch || touch.done) return;
+  const dx = e.touches[0].clientX - touch.x;
+  const dy = e.touches[0].clientY - touch.y;
+  if(Math.max(Math.abs(dx), Math.abs(dy)) >= SWIPE_TRIGGER) {
+    touch.done = true;
+    slide(swipeDir(dx, dy));
+  }
 }, {passive:false});
 document.addEventListener('touchend', e => {
-  if(!touchStart) return;
-  const dx = e.changedTouches[0].clientX - touchStart.x;
-  const dy = e.changedTouches[0].clientY - touchStart.y;
-  const adx=Math.abs(dx), ady=Math.abs(dy);
-  if(Math.max(adx,ady) < 20) return;
-  if(adx > ady) slide(dx>0?'right':'left');
-  else slide(dy>0?'down':'up');
-  touchStart = null;
-}, {passive:true});
-
-// ── CSS ANIMATIONS ──
-const styleSheet = document.createElement('style');
-styleSheet.textContent = `
-  @keyframes shake {
-    0%,100%{transform:translateX(0)}
-    20%{transform:translateX(-5px)}
-    40%{transform:translateX(5px)}
-    60%{transform:translateX(-3px)}
-    80%{transform:translateX(3px)}
+  if(touch && !touch.done) {
+    const dx = e.changedTouches[0].clientX - touch.x;
+    const dy = e.changedTouches[0].clientY - touch.y;
+    if(Math.max(Math.abs(dx), Math.abs(dy)) >= SWIPE_FLICK) slide(swipeDir(dx, dy));
   }
-`;
-document.head.appendChild(styleSheet);
+  touch = null;
+}, {passive:true});
+document.addEventListener('touchcancel', () => { touch = null; }, {passive:true});
 
 // ── RESPONSIVE RESIZE ──
 let resizeTimer;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
+    measure();
     resizeParticleCanvas();
-    renderTiles();
+    reposition();
   }, 150);
 });
-
-// ── INIT ──
-buildBgGrid();
-resizeParticleCanvas();
-particleLoop();
-newGame();
 
 // ════════════════════════════
 //   SETTINGS SYSTEM
 // ════════════════════════════
 
-// ── SETTINGS STATE ──
-
-
-// ── OPEN / CLOSE ──
 function openSettings() {
-  const ovl = document.getElementById('settings-overlay');
-  ovl.style.display = 'flex';
+  document.getElementById('settings-overlay').style.display = 'flex';
   buildSettingsUI();
 }
 function closeSettings() {
   document.getElementById('settings-overlay').style.display = 'none';
   stopListening();
+}
+// Tapping the dimmed backdrop closes settings
+document.getElementById('settings-overlay').addEventListener('click', e => {
+  if(e.target.id === 'settings-overlay') closeSettings();
+});
+
+// ── THEME ──
+function applyTheme(name) {
+  settings.theme = name === 'classic' ? 'classic' : 'obsidian';
+  const classic = isClassic();
+  if(classic) document.documentElement.dataset.theme = 'classic';
+  else delete document.documentElement.dataset.theme;
+  document.querySelector('meta[name="theme-color"]').content = classic ? '#8f7a66' : '#08090c';
+  const label = classic ? 'CLASSIC EDITION' : 'OBSIDIAN EDITION';
+  document.getElementById('tagline').textContent = label;
+  document.getElementById('panel-sub').textContent = label;
+  document.querySelectorAll('.theme-opt').forEach(b =>
+    b.classList.toggle('active', b.dataset.themeOpt === settings.theme));
+  saveSettings();
 }
 
 // ── BUILD UI ──
@@ -1327,23 +1617,24 @@ const TOGGLE_DEFS = [
 const DIR_LABELS = {up:'▲ UP', down:'▼ DOWN', left:'◀ LEFT', right:'▶ RIGHT'};
 
 function buildSettingsUI() {
-  // Toggles
+  document.querySelectorAll('.theme-opt').forEach(b =>
+    b.classList.toggle('active', b.dataset.themeOpt === settings.theme));
+
   const tList = document.getElementById('toggles-list');
   tList.innerHTML = '';
   TOGGLE_DEFS.forEach(def => {
     const row = document.createElement('div');
-    row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:12px;';
+    row.className = 'tog-row';
     row.innerHTML = `
       <div>
-        <div style="font-size:9px;letter-spacing:0.2em;color:#e8e4d8;">${def.label}</div>
-        <div style="font-size:7px;letter-spacing:0.12em;color:rgba(255,255,255,0.25);margin-top:2px;">${def.sub}</div>
+        <div class="tog-label">${def.label}</div>
+        <div class="tog-sub">${def.sub}</div>
       </div>
       <div class="tog${settings[def.key]?' on':''}" id="tog-${def.key}" onclick="toggleSetting('${def.key}')"></div>
     `;
     tList.appendChild(row);
   });
 
-  // Key boxes
   const kBoxes = document.getElementById('key-boxes');
   kBoxes.innerHTML = '';
   Object.entries(DIR_LABELS).forEach(([dir, label]) => {
@@ -1355,10 +1646,7 @@ function buildSettingsUI() {
     kBoxes.appendChild(box);
   });
 
-  // Value picker
   buildValuePicker();
-
-  // Place grid
   buildPlaceGrid();
 }
 
@@ -1394,8 +1682,7 @@ function startListening(dir) {
     keyMap[listeningDir] = e.code;
     saveSettings();
     stopListening();
-    // Refresh key boxes
-    Object.entries(DIR_LABELS).forEach(([d]) => {
+    Object.keys(DIR_LABELS).forEach(d => {
       const b = document.getElementById('kb-' + d);
       if(b) b.querySelector('.key-box-val').textContent = keyCodeDisplay(keyMap[d]);
     });
@@ -1422,7 +1709,7 @@ function buildValuePicker() {
   PLACE_VALUES.forEach(v => {
     const btn = document.createElement('button');
     btn.className = 'vpick' + (v === selectedPlaceValue ? ' active' : '');
-    btn.textContent = v >= 1000 ? (v/1000)+'K' : v;
+    btn.textContent = v;
     btn.onclick = () => {
       selectedPlaceValue = v;
       picker.querySelectorAll('.vpick').forEach(b => b.classList.remove('active'));
@@ -1438,15 +1725,9 @@ function buildPlaceGrid() {
   for(let r=0;r<SIZE;r++) {
     for(let c=0;c<SIZE;c++) {
       const cell = document.createElement('div');
-      cell.className = 'pgcell';
       const t = grid[r]?.[c];
-      if(t) {
-        cell.textContent = t.value >= 1000 ? (t.value/1000)+'K' : t.value;
-        cell.style.color = '#c9a84c';
-        cell.style.borderColor = 'rgba(201,168,76,0.3)';
-      } else {
-        cell.textContent = '·';
-      }
+      cell.className = 'pgcell' + (t ? ' filled' : '');
+      cell.textContent = t ? fmt(t.value) : '·';
       cell.onclick = () => placeTileAt(r, c);
       pg.appendChild(cell);
     }
@@ -1454,40 +1735,38 @@ function buildPlaceGrid() {
 }
 
 function placeTileAt(r, c) {
-  // Save to history first
-  history.push({grid: grid.map(row => row.map(t => t ? {...t, el:null} : null)), score, moves});
-  // Remove existing tile element
-  const existing = grid[r]?.[c];
+  flushFx();
+  history.push(snapshot());
+  const existing = grid[r][c];
   if(existing?.el) existing.el.remove();
-  // Place new tile
-  grid[r][c] = { id: ++tileId, value: selectedPlaceValue, row: r, col: c, isNew: true, merged: false };
-  renderTiles();
-  // Update mini grid
+  const t = { id: ++tileId, value: selectedPlaceValue, row: r, col: c };
+  grid[r][c] = t;
+  makeEl(t, true);
+  updateScore(0);
   buildPlaceGrid();
-  // Status
   const st = document.getElementById('place-status');
   st.textContent = `✦ Placed ${selectedPlaceValue} at row ${r+1}, col ${c+1}`;
-  setTimeout(() => { if(st) st.textContent = ''; }, 2000);
+  clearTimeout(st._t);
+  st._t = setTimeout(() => { st.textContent = ''; }, 2000);
 }
 
 // ── DANGER ──
 function clearBest() {
   best = 0;
-  localStorage.removeItem('2048-obsidian-best');
+  try { localStorage.removeItem('2048-obsidian-best'); } catch(e){}
   bestEl.textContent = '0';
   const st = document.getElementById('place-status');
-  if(st) { st.textContent = '✦ Best score reset'; st.style.color='rgba(255,80,80,0.7)'; setTimeout(()=>{st.textContent='';st.style.color='';},2000); }
+  st.textContent = '✦ Best score reset';
+  clearTimeout(st._t);
+  st._t = setTimeout(() => { st.textContent = ''; }, 2000);
 }
 
-// ── PATCH KEY LISTENER to use keyMap ──
-// Override the original keydown handler
-document.addEventListener('keydown', e => {
-  if(listeningDir) return; // don't interfere when remapping
-  if(document.getElementById('settings-overlay')?.style.display === 'flex') return;
-  for(const [dir, code] of Object.entries(keyMap)) {
-    if(e.code === code) { e.preventDefault(); slide(dir); return; }
-  }
-}, true);
+// ── INIT ──
+measure();
+buildBgGrid();
+resizeParticleCanvas();
+applyTheme(settings.theme);
+newGame();
 
 // ── OFFLINE / HOME-SCREEN APP ──
 if('serviceWorker' in navigator) {
@@ -1496,96 +1775,22 @@ if('serviceWorker' in navigator) {
 </script>
 
 <!-- INTRO SCREEN -->
-<div id="intro-screen" style="position:fixed;inset:0;z-index:999;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#08090c;overflow:hidden;">
-
-  <!-- Ambient particles canvas -->
-  <canvas id="intro-canvas" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;"></canvas>
-
-  <!-- Glow orb -->
-  <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:400px;height:400px;background:radial-gradient(circle,rgba(201,168,76,0.07) 0%,transparent 70%);border-radius:50%;animation:orb-pulse 3s ease-in-out infinite;pointer-events:none;"></div>
-
-  <div style="position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;gap:0;text-align:center;">
-
-    <!-- Pre-title -->
-    <div style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:0.6em;color:rgba(201,168,76,0.35);margin-bottom:1.5rem;text-transform:uppercase;animation:intro-fade-in 1s 0.3s both;">
-      OBSIDIAN EDITION
-    </div>
-
-    <!-- Main number -->
-    <div id="intro-number" style="font-family:'Cormorant Garamond',serif;font-weight:700;font-size:clamp(7rem,25vw,14rem);line-height:0.85;letter-spacing:-0.02em;
-      background:linear-gradient(135deg,#fff8e7 0%,#c9a84c 35%,#f0c96a 55%,#c9a84c 70%,#fff8e7 100%);
-      -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
-      background-size:300% 300%;
-      filter:drop-shadow(0 0 60px rgba(201,168,76,0.3));
-      animation:gold-shimmer 4s ease infinite, intro-title-in 1.2s 0.1s cubic-bezier(0.16,1,0.3,1) both;">
-      2048
-    </div>
-
-    <!-- Subtitle -->
-    <div style="font-family:'Cormorant Garamond',serif;font-style:italic;font-size:clamp(1rem,3vw,1.6rem);font-weight:300;
-      color:rgba(232,228,216,0.45);letter-spacing:0.3em;margin-top:1.2rem;
-      animation:intro-fade-in 1s 0.8s both;">
-      join the tiles
-    </div>
-
-    <!-- Divider -->
-    <div style="display:flex;align-items:center;gap:1.2rem;margin-top:2.5rem;animation:intro-fade-in 1s 1.1s both;">
-      <div style="width:60px;height:1px;background:linear-gradient(90deg,transparent,rgba(201,168,76,0.4));"></div>
-      <div style="font-size:10px;color:rgba(201,168,76,0.4);">✦</div>
-      <div style="width:60px;height:1px;background:linear-gradient(90deg,rgba(201,168,76,0.4),transparent);"></div>
-    </div>
-
-    <!-- Play button -->
-    <button id="intro-play-btn" onclick="newGame()" style="
-      margin-top:2.5rem;
-      background:transparent;
-      border:1px solid rgba(201,168,76,0.4);
-      color:#c9a84c;
-      font-family:'DM Mono',monospace;
-      font-size:10px;letter-spacing:0.45em;
-      padding:14px 44px;cursor:pointer;
-      position:relative;overflow:hidden;
-      transition:all 0.3s;
-      text-transform:uppercase;
-      animation:intro-fade-in 1s 1.4s both;
-    ">
-      <span style="position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(201,168,76,0.1),transparent);transform:translateX(-100%);transition:transform 0.5s;" id="btn-shine"></span>
-      BEGIN
-    </button>
-
-    <!-- Controls hint -->
-    <div style="font-family:'DM Mono',monospace;font-size:8px;letter-spacing:0.3em;color:rgba(255,255,255,0.15);margin-top:1.5rem;line-height:2.2;animation:intro-fade-in 1s 1.7s both;">
-      ↑ ↓ ← →  &nbsp;OR&nbsp;  WASD  &nbsp;·&nbsp;  SWIPE
-    </div>
-
+<div id="intro-screen">
+  <div class="intro-orb"></div>
+  <div class="intro-inner">
+    <div class="intro-pre">OBSIDIAN EDITION</div>
+    <div id="intro-number">2048</div>
+    <div class="intro-sub">join the tiles</div>
+    <div class="intro-div"><span></span><b>✦</b><span></span></div>
+    <button id="intro-play-btn" onclick="newGame()">BEGIN</button>
+    <div class="intro-hint">↑ ↓ ← → &nbsp;OR&nbsp; WASD &nbsp;·&nbsp; SWIPE</div>
   </div>
 </div>
-
-<style>
-@keyframes intro-title-in {
-  from { opacity:0; transform:scale(0.85) translateY(20px); filter:blur(20px) drop-shadow(0 0 0px rgba(201,168,76,0)); }
-  to   { opacity:1; transform:scale(1) translateY(0);       filter:blur(0)    drop-shadow(0 0 60px rgba(201,168,76,0.3)); }
-}
-@keyframes intro-fade-in {
-  from { opacity:0; transform:translateY(14px); }
-  to   { opacity:1; transform:translateY(0); }
-}
-@keyframes orb-pulse {
-  0%,100% { transform:translate(-50%,-50%) scale(1);   opacity:0.6; }
-  50%      { transform:translate(-50%,-50%) scale(1.15); opacity:1;   }
-}
-@keyframes intro-exit {
-  0%   { opacity:1; transform:scale(1); }
-  100% { opacity:0; transform:scale(1.05); pointer-events:none; }
-}
-#intro-play-btn:hover {
-  background:rgba(201,168,76,0.08);
-  border-color:rgba(201,168,76,0.7);
-  color:#f0c96a;
-  box-shadow:0 0 30px rgba(201,168,76,0.15);
-}
-#intro-play-btn:hover #btn-shine { transform:translateX(100%); }
-</style>
+<script>
+  // Intro label follows the saved theme
+  if(document.documentElement.dataset.theme === 'classic')
+    document.querySelector('.intro-pre').textContent = 'CLASSIC EDITION';
+</script>
 
 </body>
 </html>

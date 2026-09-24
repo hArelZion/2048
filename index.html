@@ -371,16 +371,6 @@ header::before {
   box-shadow: var(--pulse, none); opacity:0; pointer-events:none; will-change: opacity;
 }
 
-/* Merge effects */
-.fx-flash {
-  position:absolute; inset:0; border-radius:var(--radius);
-  background:#fff; opacity:0; pointer-events:none;
-}
-.fx-ring {
-  position:absolute; inset:0; border-radius:var(--radius);
-  border:2px solid; opacity:0; pointer-events:none;
-}
-
 /* Font size by digit count */
 .d1, .d2 { font-size: calc(var(--tile-size) * 0.46); }
 .d3      { font-size: calc(var(--tile-size) * 0.40); }
@@ -639,6 +629,7 @@ header::before {
   padding:2rem; position:relative;
   box-shadow:0 30px 80px rgba(0,0,0,0.8),0 0 60px rgba(201,168,76,0.05);
 }
+@media(max-width:600px){ .panel { padding:1.6rem 1.1rem; } }
 [data-theme="classic"] .panel { border:none; border-radius:6px; box-shadow:0 20px 60px rgba(0,0,0,0.25); }
 .panel-close {
   position:absolute; top:1rem; right:1rem; background:transparent;
@@ -747,11 +738,11 @@ header::before {
 .g-tabs { display:flex; gap:5px; margin-bottom:0.7rem; }
 .g-list { display:flex; flex-direction:column; gap:6px; }
 .g-row {
-  display:flex; align-items:center; gap:10px; padding:8px 10px;
+  display:flex; align-items:center; gap:8px; padding:8px 6px 8px 8px;
   border:1px solid rgba(201,168,76,0.1); background:rgba(255,255,255,0.015);
 }
 [data-theme="classic"] .g-row { background:#eee4da; border:none; border-radius:3px; }
-.g-rank { width:1.4rem; font-size:9px; color:var(--muted); text-align:right; flex-shrink:0; }
+.g-rank { width:1.1rem; font-size:9px; color:var(--muted); text-align:right; flex-shrink:0; }
 .mini-tile {
   width:42px; height:32px; flex-shrink:0; border-radius:4px;
   display:flex; align-items:center; justify-content:center;
@@ -761,10 +752,18 @@ header::before {
 [data-theme="classic"] .mini-tile:not(.t2):not(.t4) { color:#f9f6f2; }
 .g-main { flex:1; min-width:0; }
 .g-score { font-family:var(--font-display); font-size:1.05rem; font-weight:600; color:var(--platinum); line-height:1.1; }
-.g-score small { font-family:var(--font-ui); font-size:7px; letter-spacing:0.25em; color:var(--muted); }
+.g-score small, .g-time small {
+  display:block; font-family:var(--font-ui); font-size:6px; letter-spacing:0.3em; color:var(--muted); font-weight:400; margin-bottom:2px;
+}
 .g-meta { font-size:7px; letter-spacing:0.12em; color:var(--platinum); opacity:0.45; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .g-tag { font-size:6px; letter-spacing:0.2em; padding:1px 4px; border:1px solid currentColor; margin-left:4px; opacity:0.9; }
-.g-time { font-family:'DM Mono', monospace; font-size:12px; color:var(--gold-bright); font-variant-numeric:tabular-nums; flex-shrink:0; }
+.g-time { font-family:'DM Mono', monospace; font-size:12px; color:var(--gold-bright); font-variant-numeric:tabular-nums; flex-shrink:0; text-align:right; }
+.g-del {
+  width:28px; height:28px; flex-shrink:0; margin-left:2px;
+  background:transparent; border:1px solid rgba(255,80,80,0.25); color:rgba(255,80,80,0.6);
+  font-size:11px; cursor:pointer; display:flex; align-items:center; justify-content:center;
+}
+[data-theme="classic"] .g-del { background:#cdc1b4; border:none; border-radius:3px; color:#f9f6f2; }
 [data-theme="classic"] .g-score, [data-theme="classic"] .g-time { color:#776e65; font-weight:700; }
 .g-empty { font-size:8px; letter-spacing:0.15em; color:var(--platinum); opacity:0.4; line-height:1.9; padding:0.5rem 0; }
 .g-more { margin-top:0.7rem; width:100%; }
@@ -1225,52 +1224,24 @@ function flushFx() {
 
   f.consumed.forEach(({t}) => t.el.remove());
 
-  let biggest = 0;
   f.merged.forEach(t => {
     paint(t);
     if(settings.animations) mergeFx(t);
     if(settings.particles) { const p = center(t); spawnMergeParticles(p.x, p.y, t.value); }
-    biggest = Math.max(biggest, t.value);
   });
-  // Big merges give the whole board a small thump
-  if(biggest >= 128 && settings.animations) {
-    const k = biggest >= 1024 ? 1.025 : 1.012;
-    boardWrap.animate(
-      [{transform:'scale(1)'}, {transform:`scale(${k})`}, {transform:'scale(1)'}],
-      {duration:200, easing:'ease-out'}
-    );
-  }
 
   if(f.spawned) makeEl(f.spawned, true);
   return true;
 }
 
-// Merge look: squash-and-stretch pop, a white flash, and a coloured ring that expands outward
+// The original merge bounce (same keyframes and curve as the first version's .tile.merged)
+const MERGE_EASE = 'cubic-bezier(0.34,1.56,0.64,1)';
 function mergeFx(t) {
   t.inner.animate([
-    {transform:'scale(1)'},
-    {transform:'scale(1.24)', offset:0.35},
-    {transform:'scale(0.94)', offset:0.7},
+    {transform:'scale(1)', easing:MERGE_EASE},
+    {transform:'scale(1.22)', offset:0.45, easing:MERGE_EASE},
     {transform:'scale(1)'}
-  ], {duration:260, easing:'ease-out'});
-
-  const flash = document.createElement('div');
-  flash.className = 'fx-flash';
-  t.el.appendChild(flash);
-  flash.animate([{opacity:isClassic() ? 0.45 : 0.6}, {opacity:0}], {duration:280, easing:'ease-out'})
-    .onfinish = () => flash.remove();
-
-  const col = ringColor(t.value);
-  const ring = document.createElement('div');
-  ring.className = 'fx-ring';
-  ring.style.borderColor = col;
-  if(!isClassic()) ring.style.boxShadow = `0 0 14px ${col}, inset 0 0 10px ${col}`;
-  t.el.appendChild(ring);
-  ring.animate([
-    {transform:'scale(1)', opacity:0.95},
-    {transform:'scale(1.42)', opacity:0}
-  ], {duration:440, easing:'cubic-bezier(0.2,0.7,0.3,1)'})
-    .onfinish = () => ring.remove();
+  ], {duration:220});
 }
 
 // ── SCORE ──
@@ -1391,44 +1362,41 @@ function particleColor(val) {
   if(val >= 8)    return ['#ffaa55','#cc6600','#ffcc88'];
   return ['#f0c96a','#c9a84c','#ffe8a0'];
 }
-function ringColor(val) {
-  return isClassic() ? (CLASSIC_COLORS[val] || '#3c3a32') : particleColor(val)[0];
-}
-
 let particles = [];
 let particlesRunning = false;
 let pW = 0, pH = 0;
 const CANVAS_PAD = 60;   // the canvas overhangs the board by this much on every side
 
+// Particle burst exactly as in the first version: glowing sparks with trails and a shockwave ring
 function spawnMergeParticles(cx, cy, val) {
   const colors = particleColor(val);
-  const lv = Math.log2(val);
-  const count = Math.min(10 + lv * 2, 30);
+  const count = Math.min(8 + Math.log2(val) * 2, 30);
   const ox = cx + CANVAS_PAD, oy = cy + CANVAS_PAD;
 
   for(let i=0;i<count;i++) {
     const angle = rnd(0, Math.PI*2);
-    const speed = rnd(1.8, 5.5 + lv*0.4);
+    const speed = rnd(1.5, 5 + Math.log2(val)*0.4);
+    const col = colors[Math.floor(Math.random()*colors.length)];
     particles.push({
-      x:ox, y:oy, px:ox, py:oy,
+      x:ox, y:oy,
       vx: Math.cos(angle)*speed,
       vy: Math.sin(angle)*speed,
-      life:1, decay: rnd(0.022,0.045),
-      size: rnd(1.6, 3.2 + lv*0.25),
-      color: colors[Math.floor(Math.random()*colors.length)],
+      life:1, decay: rnd(0.015,0.04),
+      size: rnd(2, 4+Math.log2(val)*0.3),
+      color:col,
+      trail:[],
     });
   }
-  particles.push({ ring:true, x:ox, y:oy, r:TS*0.35, maxR: TS*0.9 + lv*4, life:1, color:colors[0], decay:0.05 });
+  // Shockwave ring
+  particles.push({ ring:true, x:ox, y:oy, r:0, maxR: 60+val*0.02, life:1, color:colors[0], decay:0.04 });
   if(!particlesRunning) { particlesRunning = true; requestAnimationFrame(particleLoop); }
 }
 
 function rnd(a,b) { return Math.random()*(b-a)+a; }
 
-// Runs only while particles are alive; glow comes from additive blending, not shadowBlur
+// Runs only while particles are alive
 function particleLoop() {
   pCtx.clearRect(0,0,pW,pH);
-  pCtx.globalCompositeOperation = isClassic() ? 'source-over' : 'lighter';
-  pCtx.lineCap = 'round';
 
   for(let i=particles.length-1;i>=0;i--) {
     const p = particles[i];
@@ -1436,30 +1404,47 @@ function particleLoop() {
     if(p.life <= 0) { particles.splice(i,1); continue; }
 
     if(p.ring) {
-      p.r += (p.maxR - p.r) * 0.18;
+      p.r += (p.maxR - p.r) * 0.15;
       pCtx.beginPath();
       pCtx.arc(p.x, p.y, p.r, 0, Math.PI*2);
       pCtx.strokeStyle = p.color;
-      pCtx.globalAlpha = p.life * 0.55;
-      pCtx.lineWidth = 2 * p.life + 0.5;
+      pCtx.globalAlpha = p.life * 0.5;
+      pCtx.lineWidth = 1.5;
       pCtx.stroke();
+      pCtx.globalAlpha = 1;
       continue;
     }
 
-    p.px = p.x; p.py = p.y;
-    p.vx *= 0.92; p.vy *= 0.92; p.vy += 0.06;
+    p.trail.push({x:p.x,y:p.y});
+    if(p.trail.length > 5) p.trail.shift();
+
+    p.vx *= 0.93; p.vy *= 0.93; p.vy += 0.05;
     p.x += p.vx; p.y += p.vy;
 
-    // Streak from the previous position gives a motion trail in one stroke
-    pCtx.globalAlpha = p.life;
-    pCtx.strokeStyle = p.color;
-    pCtx.lineWidth = p.size * (0.4 + p.life);
+    // Trail
+    for(let t=0;t<p.trail.length-1;t++) {
+      const a = (t/p.trail.length)*p.life*0.4;
+      pCtx.beginPath();
+      pCtx.moveTo(p.trail[t].x, p.trail[t].y);
+      pCtx.lineTo(p.trail[t+1].x, p.trail[t+1].y);
+      pCtx.strokeStyle = p.color;
+      pCtx.globalAlpha = a;
+      pCtx.lineWidth = p.size * (t/p.trail.length) * 0.6;
+      pCtx.stroke();
+    }
+    pCtx.globalAlpha = 1;
+
+    // Core
     pCtx.beginPath();
-    pCtx.moveTo(p.px - p.vx*1.5, p.py - p.vy*1.5);
-    pCtx.lineTo(p.x, p.y);
-    pCtx.stroke();
+    pCtx.arc(p.x, p.y, p.size * p.life, 0, Math.PI*2);
+    pCtx.fillStyle = p.color;
+    pCtx.globalAlpha = p.life;
+    pCtx.shadowColor = p.color;
+    pCtx.shadowBlur = p.size * 3;
+    pCtx.fill();
+    pCtx.globalAlpha = 1;
+    pCtx.shadowBlur = 0;
   }
-  pCtx.globalAlpha = 1;
 
   if(particles.length) requestAnimationFrame(particleLoop);
   else { pCtx.clearRect(0,0,pW,pH); particlesRunning = false; }
@@ -1957,13 +1942,23 @@ function buildGamesUI() {
       <span class="g-rank">${i + 1}</span>
       <span class="mini-tile ${tileClass(g.maxTile)}">${fmt(g.maxTile)}</span>
       <div class="g-main">
-        <div class="g-score">${fmt(g.score)} <small>PTS</small></div>
+        <div class="g-score"><small>SCORE</small>${g.score.toLocaleString('en-US')}</div>
         <div class="g-meta">${fmtDate(g.date)} · ${g.moves} MOVES${g.status === 'quit' ? '<span class="g-tag">STOPPED</span>' : ''}${g.edited ? '<span class="g-tag">✦ EDITED</span>' : ''}</div>
       </div>
-      <span class="g-time">${fmtTime(g.time)}</span>
+      <span class="g-time"><small>TIME</small>${fmtTime(g.time)}</span>
+      <button class="g-del" onclick="deleteGame(${g.id})" aria-label="Delete game">✕</button>
     </div>`).join('') +
     (!gamesShowAll && n > GAMES_PAGE
       ? `<button class="btn g-more" onclick="gamesShowAll=true;buildGamesUI()">SHOW ALL ${n}</button>` : '');
+}
+
+function deleteGame(id) {
+  const g = games.find(x => x.id === id);
+  if(!g) return;
+  if(!confirm(`Delete this game?\n\nScore ${g.score.toLocaleString('en-US')} · reached ${g.maxTile} · ${fmtTime(g.time)}`)) return;
+  games = games.filter(x => x.id !== id);
+  saveGames();
+  buildGamesUI();
 }
 
 function clearGames() {
